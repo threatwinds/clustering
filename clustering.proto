@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
+package clustering;
+
+option go_package = "github.com/threatwinds/clustering";
+
+service Cluster{
+    rpc Register(Member) returns (google.protobuf.Empty) {}
+    rpc MasterVote(Vote) returns (google.protobuf.Empty){}
+    rpc Ping(stream Pong) returns (google.protobuf.Empty){}
+    rpc Receiver(stream Message) returns (google.protobuf.Empty){}
+    rpc ElectedMaster(Vote) returns (google.protobuf.Empty){}
+}
+
+message Member {
+    string name = 1;
+    string ip = 2;
+    bool master = 3;
+    int64 upTimestamp = 4;
+}
+
+message Pong {
+    string name = 1;
+    int64 timestamp = 2;
+}
+
+message Vote {
+    string name = 1;
+}
+
+message Message {
+    string kind = 1;
+    string thread = 2;
+    string value = 3;
+}
+
+
