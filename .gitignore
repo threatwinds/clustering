@@ -23,3 +23,4 @@ go.work
 .idea/
 .vscode/
 __debug_*
+cmd/clustering

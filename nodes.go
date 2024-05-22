@@ -3,7 +3,6 @@ package clustering
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/threatwinds/clustering/helpers"
@@ -18,7 +17,7 @@ type Node struct {
 	LastPing   int64
 	Latency    int64
 	tasks      chan *Task
-	mutex      sync.RWMutex
+	mutex      chan struct{}
 }
 
 func (node *Node) client() ClusterClient {
@@ -31,9 +30,6 @@ func (node *Node) connect() *logger.Error {
 	if node.Connection != nil {
 		return nil
 	}
-
-	node.mutex.Lock()
-	defer node.mutex.Unlock()
 
 	helpers.Logger.LogF(200, "connecting to %s", node.Properties.NodeIp)
 
@@ -61,6 +57,42 @@ func (node *Node) joinTo(newNode *Node) *logger.Error {
 
 	if err != nil {
 		return helpers.Logger.ErrorF("error registering from %s to %s, %v", node.Properties.NodeIp, newNode.Properties.NodeIp, err)
+	}
+
+	return nil
+}
+
+func (node *Node) updateTo(dstNode *Node) *logger.Error {
+	if dstNode.Properties.Status != "healthy" {
+		return helpers.Logger.ErrorF("node %s is not healthy", dstNode.Properties.NodeIp)
+	}
+
+	_, err := dstNode.client().UpdateNode(context.Background(), node.Properties)
+	if err != nil {
+		e := helpers.Logger.ErrorF("cannot send resources update to %s: %v", dstNode.Properties.NodeIp, err)
+		if e.Is("node not found") {
+			node.joinTo(dstNode)
+			return nil
+		} else {
+			dstNode.setUnhealthy(err.Error())
+			return e
+		}
+	}
+
+	return nil
+}
+
+func (node *Node) withLock(ref string, action func() error) *logger.Error {
+	select {
+	case <-time.After(5 * time.Second):
+		return helpers.Logger.ErrorF("%s: timeout waiting to lock %s", ref, node.Properties.NodeIp)
+	case node.mutex <- struct{}{}:
+		defer func() { <-node.mutex }()
+	}
+
+	err := action()
+	if err != nil {
+		return helpers.Logger.ErrorF("error in action: %v", err)
 	}
 
 	return nil

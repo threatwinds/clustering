@@ -12,7 +12,7 @@ func (cluster *Cluster) BroadcastTask(task *Task) {
 
 func (cluster *Cluster) EnqueueTask(task *Task, inNodes int) *logger.Error {
 	nodes := cluster.ListNodes()
-	
+
 	if len(nodes) < inNodes {
 		return helpers.Logger.ErrorF("not enough nodes to perform task")
 	}
@@ -20,30 +20,24 @@ func (cluster *Cluster) EnqueueTask(task *Task, inNodes int) *logger.Error {
 	alreadyAssigned := make(map[string]bool)
 
 	for i := 0; i < inNodes; i++ {
-		for _, nodeIP := range nodes{
+		for _, nodeIP := range nodes {
 			node, e := cluster.GetNode(nodeIP)
 			if e != nil {
 				return helpers.Logger.ErrorF("error getting node: %v", e)
 			}
 
-			node.mutex.RLock()
-
 			if _, ok := alreadyAssigned[node.Properties.NodeIp]; !ok {
-				if node.Properties.Cores < node.Properties.RunningThreads{
-					node.mutex.RUnlock()
+				if node.Properties.Cores < node.Properties.RunningThreads {
 					continue
 				}
 
-				if node.Properties.Memory - node.Properties.MemoryInUse < 50 {
-					node.mutex.RUnlock()
+				if node.Properties.Memory-node.Properties.MemoryInUse < 50 {
 					continue
 				}
 
 				node.tasks <- task
 				alreadyAssigned[node.Properties.NodeIp] = true
 			}
-
-			node.mutex.RUnlock()
 		}
 	}
 
