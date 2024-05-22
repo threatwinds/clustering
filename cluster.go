@@ -13,7 +13,7 @@ import (
 type Cluster struct {
 	LocalNode    *Node
 	Nodes        map[string]*Node
-	callBackDict map[string]func(task *Task) error
+	callBackDict map[string]func(task *Task)
 	mutex        chan struct{}
 	UnimplementedClusterServer
 }
@@ -46,7 +46,7 @@ func (cluster *Cluster) withLock(ref string, action func() error) *logger.Error 
 	return nil
 }
 
-func (cluster *Cluster) Start(callBackDict map[string]func(task *Task) error) *logger.Error {
+func (cluster *Cluster) Start(callBackDict map[string]func(task *Task)) *logger.Error {
 	helpers.Logger.LogF(200, "starting cluster")
 
 	var e *logger.Error

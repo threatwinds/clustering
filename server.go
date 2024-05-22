@@ -77,9 +77,7 @@ func (cluster *Cluster) ProcessTask(srv Cluster_ProcessTaskServer) error {
 
 		for fName, f := range cluster.callBackDict{
 			if fName == task.FunctionName {
-				if err := f(task); err != nil {
-					return err
-				}
+				go f(task)
 			}
 		}
 	}

@@ -12,10 +12,8 @@ import (
 	"google.golang.org/grpc"
 )
 
-func printMsg(task *clustering.Task) error {
+func printMsg(task *clustering.Task) {
 	helpers.Logger.LogF(200, "received task %s with args %v", task.FunctionName, task.Args)
-
-	return nil
 }
 
 func main() {
@@ -33,7 +31,7 @@ func main() {
 
 	go grpcServer.Serve(lis)
 
-	e := cluster.Start(map[string]func(task *clustering.Task) error{
+	e := cluster.Start(map[string]func(task *clustering.Task){
 		"print": printMsg,
 	})
 
