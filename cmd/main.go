@@ -7,22 +7,20 @@ import (
 	"os"
 	"time"
 
-	"github.com/threatwinds/clustering" 
+	"github.com/threatwinds/clustering"
 	"github.com/threatwinds/clustering/helpers"
 	"google.golang.org/grpc"
 )
 
 func printMsg(task *clustering.Task) error {
-	helpers.Logger.LogF(200, "received task with args %v", task.Args)
-	
-	fmt.Printf("received task with args %v\n", task.Args)
-	
+	helpers.Logger.LogF(200, "received task %s with args %v", task.FunctionName, task.Args)
+
 	return nil
 }
 
 func main() {
 	cluster := clustering.New()
-	
+
 	grpcServer := grpc.NewServer()
 
 	clustering.RegisterClusterServer(grpcServer, cluster)
@@ -47,11 +45,11 @@ func main() {
 		nu := rand.Intn(1000)
 
 		helpers.Logger.LogF(200, "sending %d", nu)
-		
+
 		cluster.EnqueueTask(&clustering.Task{
-			AnswerTo: cluster.LocalNode.Properties.NodeIp,
+			AnswerTo:     cluster.LocalNode.Properties.NodeIp,
 			FunctionName: "print",
-			Args: []string{fmt.Sprintf("%d", nu)},
+			Args:         []string{fmt.Sprintf("%d", nu), cluster.LocalNode.Properties.NodeIp},
 		}, 1)
 
 		time.Sleep(5 * time.Second)

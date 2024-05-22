@@ -187,6 +187,7 @@ func (cluster *Cluster) updateResources() {
 		cluster.LocalNode.withLock("sending local resources update", func() error {
 			cpu := runtime.NumCPU()
 			cluster.LocalNode.Properties.Cores = int32(cpu)
+			cluster.LocalNode.Properties.RunningThreads = int32(runtime.NumGoroutine())
 
 			var mem runtime.MemStats
 			runtime.ReadMemStats(&mem)

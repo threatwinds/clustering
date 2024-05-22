@@ -27,7 +27,7 @@ func (cluster *Cluster) EnqueueTask(task *Task, inNodes int) *logger.Error {
 			}
 
 			if _, ok := alreadyAssigned[node.Properties.NodeIp]; !ok {
-				if node.Properties.Cores < node.Properties.RunningThreads {
+				if node.Properties.Cores*100 < node.Properties.RunningThreads {
 					continue
 				}
 

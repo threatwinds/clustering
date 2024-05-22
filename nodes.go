@@ -46,6 +46,24 @@ func (node *Node) connect() *logger.Error {
 	return nil
 }
 
+func (node *Node) startSending() {
+	client := NewClusterClient(node.Connection)
+	pTaskClient, err := client.ProcessTask(context.Background())
+	if err != nil {
+		helpers.Logger.ErrorF("error processing task: %v", err)
+		return
+	}
+	for {
+		task := <-node.tasks
+		err := pTaskClient.Send(task)
+		if err != nil {
+			helpers.Logger.ErrorF("error processing task: %v", err)
+			node.setUnhealthy(err.Error())
+			return
+		}
+	}
+}
+
 func (node *Node) joinTo(newNode *Node) *logger.Error {
 	err := helpers.Logger.Retry(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
