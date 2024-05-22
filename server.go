@@ -37,10 +37,10 @@ func (cluster *Cluster) UpdateNode(ctx context.Context, in *NodeProperties) (*em
 
 	node.Properties = in
 
-	return new(emptypb.Empty), nil
+	return nil, nil
 }
 
-func (cluster *Cluster) Echo(ctx context.Context, in *Ping) (*Pong, error) {	
+func (cluster *Cluster) Echo(ctx context.Context, in *Ping) (*Pong, error) {
 	node, e := cluster.GetNode(in.NodeIp)
 	if e != nil {
 		return nil, fmt.Errorf(e.Message)
