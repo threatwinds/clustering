@@ -22,7 +22,7 @@ func (cluster *Cluster) Join(ctx context.Context, in *NodeProperties) (*emptypb.
 		newNode.Properties = in
 	}
 
-	return new(emptypb.Empty), nil
+	return nil, nil
 }
 
 func (cluster *Cluster) UpdateNode(ctx context.Context, in *NodeProperties) (*emptypb.Empty, error) {
@@ -31,10 +31,11 @@ func (cluster *Cluster) UpdateNode(ctx context.Context, in *NodeProperties) (*em
 		return nil, fmt.Errorf(e.Message)
 	}
 
-	if in.Timestamp > node.Properties.Timestamp {
-		node.Properties = in
-		
+	if in.Timestamp < node.Properties.Timestamp {
+		return nil, nil
 	}
+
+	node.Properties = in
 
 	return new(emptypb.Empty), nil
 }
