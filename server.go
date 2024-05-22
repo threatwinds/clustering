@@ -3,7 +3,6 @@ package clustering
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/threatwinds/clustering/helpers"
@@ -74,17 +73,6 @@ func (cluster *cluster) ProcessTask(srv Cluster_ProcessTaskServer) error {
 		task, err := srv.Recv()
 		if err != nil {
 			return err
-		}
-
-		switch task.FunctionName {
-		case "broadcast":
-			cluster.BroadcastTask(task)
-		case "enqueue":
-			nodes, err := strconv.Atoi(task.Args[0])
-			if err != nil {
-				return err
-			}
-			cluster.EnqueueTask(task, nodes)
 		}
 
 		for fName, f := range cluster.callBackDict {
