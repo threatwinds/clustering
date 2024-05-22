@@ -45,9 +45,9 @@ func main() {
 		helpers.Logger.LogF(200, "sending %d", nu)
 
 		cluster.EnqueueTask(&clustering.Task{
-			AnswerTo:     cluster.LocalNode.Properties.NodeIp,
+			AnswerTo:     cluster.MyIp(),
 			FunctionName: "print",
-			Args:         []string{fmt.Sprintf("%d", nu), cluster.LocalNode.Properties.NodeIp},
+			Args:         []string{fmt.Sprintf("%d", nu), cluster.MyIp()},
 		}, 1)
 
 		time.Sleep(5 * time.Second)

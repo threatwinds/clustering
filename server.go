@@ -10,39 +10,39 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func (cluster *Cluster) Join(ctx context.Context, in *NodeProperties) (*emptypb.Empty, error) {
+func (cluster *cluster) Join(ctx context.Context, in *NodeProperties) (*emptypb.Empty, error) {
 	helpers.Logger.LogF(
 		200,
 		"received register request from %s",
 		in.NodeIp,
 	)
 
-	newNode := cluster.NewNode(in)
+	newNode := cluster.newNode(in)
 
-	if in.Timestamp > newNode.Properties.Timestamp {
-		newNode.Properties = in
+	if in.Timestamp > newNode.properties.Timestamp {
+		newNode.properties = in
 	}
 
 	return nil, nil
 }
 
-func (cluster *Cluster) UpdateNode(ctx context.Context, in *NodeProperties) (*emptypb.Empty, error) {
-	node, e := cluster.GetNode(in.NodeIp)
+func (cluster *cluster) UpdateNode(ctx context.Context, in *NodeProperties) (*emptypb.Empty, error) {
+	node, e := cluster.getNode(in.NodeIp)
 	if e != nil {
 		return nil, fmt.Errorf(e.Message)
 	}
 
-	if in.Timestamp < node.Properties.Timestamp {
+	if in.Timestamp < node.properties.Timestamp {
 		return nil, nil
 	}
 
-	node.Properties = in
+	node.properties = in
 
 	return nil, nil
 }
 
-func (cluster *Cluster) Echo(ctx context.Context, in *Ping) (*Pong, error) {
-	node, e := cluster.GetNode(in.NodeIp)
+func (cluster *cluster) Echo(ctx context.Context, in *Ping) (*Pong, error) {
+	node, e := cluster.getNode(in.NodeIp)
 	if e != nil {
 		return nil, fmt.Errorf(e.Message)
 	}
@@ -57,7 +57,7 @@ func (cluster *Cluster) Echo(ctx context.Context, in *Ping) (*Pong, error) {
 	}, nil
 }
 
-func (cluster *Cluster) ProcessTask(srv Cluster_ProcessTaskServer) error {
+func (cluster *cluster) ProcessTask(srv Cluster_ProcessTaskServer) error {
 	for {
 		task, err := srv.Recv()
 		if err != nil {

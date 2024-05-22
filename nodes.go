@@ -11,43 +11,43 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type Node struct {
-	Properties *NodeProperties
-	Connection *grpc.ClientConn
-	LastPing   int64
-	Latency    int64
+type node struct {
+	properties *NodeProperties
+	connection *grpc.ClientConn
+	lastPing   int64
+	latency    int64
 	tasks      chan *Task
 	mutex      chan struct{}
 }
 
-func (node *Node) client() ClusterClient {
+func (node *node) client() ClusterClient {
 	node.connect()
 
-	return NewClusterClient(node.Connection)
+	return NewClusterClient(node.connection)
 }
 
-func (node *Node) connect() *logger.Error {
-	if node.Connection != nil {
+func (node *node) connect() *logger.Error {
+	if node.connection != nil {
 		return nil
 	}
 
-	helpers.Logger.LogF(200, "connecting to %s", node.Properties.NodeIp)
+	helpers.Logger.LogF(200, "connecting to %s", node.properties.NodeIp)
 
 	conn, err := grpc.Dial(
-		fmt.Sprintf("%s:%d", node.Properties.NodeIp,
+		fmt.Sprintf("%s:%d", node.properties.NodeIp,
 			helpers.GetCfg().ClusterPort),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return helpers.Logger.ErrorF("error establishing connection: %v", err)
 	}
 
-	node.Connection = conn
+	node.connection = conn
 
 	return nil
 }
 
-func (node *Node) startSending() {
-	client := NewClusterClient(node.Connection)
+func (node *node) startSending() {
+	client := NewClusterClient(node.connection)
 	pTaskClient, err := client.ProcessTask(context.Background())
 	if err != nil {
 		helpers.Logger.ErrorF("error processing task: %v", err)
@@ -64,30 +64,30 @@ func (node *Node) startSending() {
 	}
 }
 
-func (node *Node) joinTo(newNode *Node) *logger.Error {
+func (node *node) joinTo(newNode *node) *logger.Error {
 	err := helpers.Logger.Retry(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		_, err := newNode.client().Join(ctx, node.Properties)
+		_, err := newNode.client().Join(ctx, node.properties)
 		return err
 	})
 
 	if err != nil {
-		return helpers.Logger.ErrorF("error registering from %s to %s, %v", node.Properties.NodeIp, newNode.Properties.NodeIp, err)
+		return helpers.Logger.ErrorF("error registering from %s to %s, %v", node.properties.NodeIp, newNode.properties.NodeIp, err)
 	}
 
 	return nil
 }
 
-func (node *Node) updateTo(dstNode *Node) *logger.Error {
-	if dstNode.Properties.Status != "healthy" {
-		return helpers.Logger.ErrorF("node %s is not healthy", dstNode.Properties.NodeIp)
+func (node *node) updateTo(dstNode *node) *logger.Error {
+	if dstNode.properties.Status != "healthy" {
+		return helpers.Logger.ErrorF("node %s is not healthy", dstNode.properties.NodeIp)
 	}
 
-	_, err := dstNode.client().UpdateNode(context.Background(), node.Properties)
+	_, err := dstNode.client().UpdateNode(context.Background(), node.properties)
 	if err != nil {
-		e := helpers.Logger.ErrorF("cannot send resources update to %s: %v", dstNode.Properties.NodeIp, err)
+		e := helpers.Logger.ErrorF("cannot send resources update to %s: %v", dstNode.properties.NodeIp, err)
 		if e.Is("node not found") {
 			node.joinTo(dstNode)
 			return nil
@@ -100,10 +100,10 @@ func (node *Node) updateTo(dstNode *Node) *logger.Error {
 	return nil
 }
 
-func (node *Node) withLock(ref string, action func() error) *logger.Error {
+func (node *node) withLock(ref string, action func() error) *logger.Error {
 	select {
 	case <-time.After(5 * time.Second):
-		return helpers.Logger.ErrorF("%s: timeout waiting to lock %s", ref, node.Properties.NodeIp)
+		return helpers.Logger.ErrorF("%s: timeout waiting to lock %s", ref, node.properties.NodeIp)
 	case node.mutex <- struct{}{}:
 		defer func() { <-node.mutex }()
 	}

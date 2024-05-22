@@ -6,24 +6,24 @@ import (
 	"github.com/threatwinds/clustering/helpers"
 )
 
-func (cluster *Cluster) checkNodes() {
+func (cluster *cluster) checkNodes() {
 	time.Sleep(60 * time.Second)
 	for {
 		cluster.withLock("checking node health", func() error {
-			for name, node := range cluster.Nodes {
+			for name, node := range cluster.nodes {
 				removeDelay := time.Now().UTC().Add(-120 * time.Second).UnixMilli()
 				unhealthyDelay := time.Now().UTC().Add(-30 * time.Second).UnixMilli()
 				
 				node.withLock("checking node health", func() error {
-					if node.Properties == nil {
+					if node.properties == nil {
 						return nil
 					}
 					
-					if node.Properties.Status != "new" && node.LastPing < removeDelay {
-						delete(cluster.Nodes, name)
+					if node.properties.Status != "new" && node.lastPing < removeDelay {
+						delete(cluster.nodes, name)
 					}
 	
-					if node.Properties.Status == "healthy" && node.LastPing < unhealthyDelay {
+					if node.properties.Status == "healthy" && node.lastPing < unhealthyDelay {
 						node.setUnhealthy("of high latency")
 					}
 
@@ -38,20 +38,20 @@ func (cluster *Cluster) checkNodes() {
 	}
 }
 
-func (node *Node) setUnhealthy(cause string) {
-	helpers.Logger.ErrorF("node %s is unhealthy becasue: %s", node.Properties.NodeIp, cause)
+func (node *node) setUnhealthy(cause string) {
+	helpers.Logger.ErrorF("node %s is unhealthy: %s", node.properties.NodeIp, cause)
 
-	node.Latency = -1
-	node.Properties.Status = "unhealthy"
+	node.latency = -1
+	node.properties.Status = "unhealthy"
 }
 
-func (node *Node) setHealthy(now, senderTime int64) {
-	if node.Properties.Status != "healthy" {
-		helpers.Logger.LogF(200, "node %s is now healthy", node.Properties.NodeIp)
+func (node *node) setHealthy(now, senderTime int64) {
+	if node.properties.Status != "healthy" {
+		helpers.Logger.LogF(200, "node %s is now healthy", node.properties.NodeIp)
 		go node.startSending()
 	}
 
-	node.Latency = now - senderTime
-	node.LastPing = senderTime
-	node.Properties.Status = "healthy"
+	node.latency = now - senderTime
+	node.lastPing = senderTime
+	node.properties.Status = "healthy"
 }
