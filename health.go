@@ -6,6 +6,9 @@ import (
 	"github.com/threatwinds/clustering/helpers"
 )
 
+// checkNodes periodically checks the health of all nodes in the cluster.
+// It removes nodes that haven't sent a ping in the last 120 seconds,
+// and marks nodes with high latency as unhealthy.
 func (cluster *cluster) checkNodes() {
 	time.Sleep(60 * time.Second)
 	for {
@@ -38,6 +41,7 @@ func (cluster *cluster) checkNodes() {
 	}
 }
 
+// setUnhealthy marks the node as unhealthy with the given cause.
 func (node *node) setUnhealthy(cause string) {
 	helpers.Logger.ErrorF("node %s is unhealthy: %s", node.properties.NodeIp, cause)
 
@@ -45,6 +49,7 @@ func (node *node) setUnhealthy(cause string) {
 	node.properties.Status = "unhealthy"
 }
 
+// setHealthy updates the node's status to healthy and sets the latency and last ping time.
 func (node *node) setHealthy(now, senderTime int64) {
 	if node.properties.Status != "healthy" {
 		helpers.Logger.LogF(200, "node %s is now healthy", node.properties.NodeIp)

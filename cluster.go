@@ -1,3 +1,4 @@
+// Package clustering provides functionality for managing a cluster of nodes.
 package clustering
 
 import (
@@ -12,6 +13,7 @@ import (
 	"github.com/threatwinds/logger"
 )
 
+// cluster represents a cluster of nodes.
 type cluster struct {
 	localNode    *node
 	nodes        map[string]*node
@@ -23,6 +25,7 @@ type cluster struct {
 var clusterInstance *cluster
 var clusterOnce sync.Once
 
+// New creates a new instance of the cluster.
 func New() *cluster {
 	clusterOnce.Do(func() {
 		clusterInstance = &cluster{}
@@ -32,6 +35,7 @@ func New() *cluster {
 	return clusterInstance
 }
 
+// withLock acquires a lock on the cluster and performs the specified action.
 func (cluster *cluster) withLock(ref string, action func() error) *logger.Error {
 	wait, _ := time.ParseDuration(fmt.Sprintf("%ds", len(cluster.nodes)*2))
 
@@ -54,6 +58,7 @@ func (cluster *cluster) withLock(ref string, action func() error) *logger.Error 
 	return nil
 }
 
+// Start starts the cluster with the specified callback dictionary.
 func (cluster *cluster) Start(callBackDict map[string]func(task *Task)) *logger.Error {
 	helpers.Logger.LogF(200, "starting cluster")
 
@@ -103,6 +108,7 @@ func (cluster *cluster) Start(callBackDict map[string]func(task *Task)) *logger.
 	return nil
 }
 
+// connectToSeeds connects to the seed nodes in the cluster.
 func (cluster *cluster) connectToSeeds() {
 	cluster.withLock("connect to seed", func() error {
 		for _, seed := range helpers.GetCfg().SeedNodes {
@@ -114,6 +120,7 @@ func (cluster *cluster) connectToSeeds() {
 	})
 }
 
+// listNodes returns a list of active nodes in the cluster.
 func (cluster *cluster) listNodes() []string {
 	var nodes = make([]string, 0, 3)
 
@@ -127,10 +134,12 @@ func (cluster *cluster) listNodes() []string {
 	return nodes
 }
 
+// MyIp returns the IP address of the local node.
 func (cluster *cluster) MyIp() string {
 	return cluster.localNode.properties.NodeIp
 }
 
+// getNode returns the node with the specified name.
 func (cluster *cluster) getNode(name string) (*node, *logger.Error) {
 	node, ok := cluster.nodes[name]
 	if !ok {
@@ -140,6 +149,7 @@ func (cluster *cluster) getNode(name string) (*node, *logger.Error) {
 	return node, nil
 }
 
+// getRandomNode returns a random active node from the cluster.
 func (cluster *cluster) getRandomNode() (*node, *logger.Error) {	
 	for {
 		n := rand.Intn(len(cluster.nodes) - 1)
@@ -162,6 +172,7 @@ func (cluster *cluster) getRandomNode() (*node, *logger.Error) {
 	}
 }
 
+// newEmptyNode creates a new empty node with the specified IP address.
 func (cluster *cluster) newEmptyNode(ip string) *node {
 	var newNode *node
 
@@ -187,6 +198,7 @@ func (cluster *cluster) newEmptyNode(ip string) *node {
 	return newNode
 }
 
+// newNode creates a new node with the specified properties and joins it to the cluster.
 func (cluster *cluster) newNode(properties *NodeProperties) *node {
 	var newNode *node
 
@@ -211,6 +223,7 @@ func (cluster *cluster) newNode(properties *NodeProperties) *node {
 	return newNode
 }
 
+// updateResources updates the resources of the local node and sends updates to other nodes in the cluster.
 func (cluster *cluster) updateResources() {
 	for {
 		cluster.localNode.withLock("sending local resources update", func() error {
@@ -247,6 +260,7 @@ func (cluster *cluster) updateResources() {
 	}
 }
 
+// viralizeStatus sends the status updates of the local node to other nodes in the cluster.
 func (cluster *cluster) viralizeStatus() {
 	for {
 		cluster.withLock("sending resources update", func() error {
@@ -286,6 +300,7 @@ func (cluster *cluster) viralizeStatus() {
 	}
 }
 
+// echo sends a ping to other nodes in the cluster and checks their response.
 func (cluster *cluster) echo() {
 	for {
 		cluster.withLock("sending echo", func() error {

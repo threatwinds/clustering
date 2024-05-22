@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// node represents a node in the cluster.
 type node struct {
 	properties *NodeProperties
 	connection *grpc.ClientConn
@@ -20,12 +21,14 @@ type node struct {
 	mutex      chan struct{}
 }
 
+// client returns a ClusterClient for the node.
 func (node *node) client() ClusterClient {
 	node.connect()
 
 	return NewClusterClient(node.connection)
 }
 
+// connect establishes a connection to the node.
 func (node *node) connect() *logger.Error {
 	if node.connection != nil {
 		return nil
@@ -48,6 +51,7 @@ func (node *node) connect() *logger.Error {
 	return nil
 }
 
+// startSending starts sending tasks to the node.
 func (node *node) startSending() {
 	client := NewClusterClient(node.connection)
 	pTaskClient, err := client.ProcessTask(context.Background())
@@ -66,6 +70,7 @@ func (node *node) startSending() {
 	}
 }
 
+// joinTo joins the current node to a new node in the cluster.
 func (node *node) joinTo(newNode *node) *logger.Error {
 	err := helpers.Logger.Retry(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -82,6 +87,7 @@ func (node *node) joinTo(newNode *node) *logger.Error {
 	return nil
 }
 
+// updateTo updates the current node's properties to the destination node.
 func (node *node) updateTo(dstNode *node) *logger.Error {
 	if dstNode.properties.Status != "healthy" {
 		return helpers.Logger.ErrorF("node %s is not healthy", dstNode.properties.NodeIp)
@@ -102,6 +108,7 @@ func (node *node) updateTo(dstNode *node) *logger.Error {
 	return nil
 }
 
+// withLock acquires a lock on the node and performs the specified action.
 func (node *node) withLock(ref string, action func() error) *logger.Error {
 	select {
 	case <-time.After(5 * time.Second):

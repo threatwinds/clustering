@@ -5,10 +5,13 @@ import (
 	"github.com/threatwinds/logger"
 )
 
+// BroadcastTask broadcasts a task to all nodes in the cluster.
 func (cluster *cluster) BroadcastTask(task *Task) {
 	_ = cluster.EnqueueTask(task, len(cluster.nodes))
 }
 
+// EnqueueTask enqueues a task to be performed by a specified number of nodes in the cluster.
+// It returns an error if there are not enough nodes available to perform the task.
 func (cluster *cluster) EnqueueTask(task *Task, inNodes int) *logger.Error {
 	if len(cluster.nodes) < inNodes {
 		return helpers.Logger.ErrorF("not enough nodes to perform task")
