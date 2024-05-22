@@ -13,7 +13,7 @@ import (
 type Cluster struct {
 	LocalNode    *Node
 	Nodes        map[string]*Node
-	callBackDict map[string]func(task *Task) (*Result, error)
+	callBackDict map[string]func(task *Task) error
 	mutex 	     sync.RWMutex
 	UnimplementedClusterServer
 }
@@ -30,7 +30,7 @@ func New() *Cluster {
 	return clusterInstance
 }
 
-func (cluster *Cluster) Start(callBackDict map[string]func(task *Task) (*Result, error)) *logger.Error {
+func (cluster *Cluster) Start(callBackDict map[string]func(task *Task) error) *logger.Error {
 	helpers.Logger.LogF(200, "starting cluster")
 
 	var e *logger.Error

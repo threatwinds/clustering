@@ -82,7 +82,7 @@ func (c *clusterClient) ProcessTask(ctx context.Context, opts ...grpc.CallOption
 
 type Cluster_ProcessTaskClient interface {
 	Send(*Task) error
-	Recv() (*Result, error)
+	CloseAndRecv() (*emptypb.Empty, error)
 	grpc.ClientStream
 }
 
@@ -94,8 +94,11 @@ func (x *clusterProcessTaskClient) Send(m *Task) error {
 	return x.ClientStream.SendMsg(m)
 }
 
-func (x *clusterProcessTaskClient) Recv() (*Result, error) {
-	m := new(Result)
+func (x *clusterProcessTaskClient) CloseAndRecv() (*emptypb.Empty, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(emptypb.Empty)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -201,7 +204,7 @@ func _Cluster_ProcessTask_Handler(srv interface{}, stream grpc.ServerStream) err
 }
 
 type Cluster_ProcessTaskServer interface {
-	Send(*Result) error
+	SendAndClose(*emptypb.Empty) error
 	Recv() (*Task, error)
 	grpc.ServerStream
 }
@@ -210,7 +213,7 @@ type clusterProcessTaskServer struct {
 	grpc.ServerStream
 }
 
-func (x *clusterProcessTaskServer) Send(m *Result) error {
+func (x *clusterProcessTaskServer) SendAndClose(m *emptypb.Empty) error {
 	return x.ServerStream.SendMsg(m)
 }
 
@@ -246,7 +249,6 @@ var Cluster_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "ProcessTask",
 			Handler:       _Cluster_ProcessTask_Handler,
-			ServerStreams: true,
 			ClientStreams: true,
 		},
 	},

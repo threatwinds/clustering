@@ -10,7 +10,7 @@ service Cluster{
     rpc Join(NodeProperties) returns (google.protobuf.Empty){}
     rpc UpdateNode(NodeProperties) returns (google.protobuf.Empty){}
     rpc Echo(Ping) returns (Pong);
-    rpc ProcessTask(stream Task) returns (stream Result);
+    rpc ProcessTask(stream Task) returns (google.protobuf.Empty){}
 }
 
 message NodeProperties {
@@ -41,9 +41,4 @@ message Task {
     string functionName = 2;
     string thread = 3;
     repeated string args = 4;
-}
-
-message Result {
-    string thread = 1;
-    string result = 2;
 }
