@@ -1,53 +1,69 @@
 package clustering
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/threatwinds/clustering/helpers"
 	"github.com/threatwinds/logger"
 )
 
 // BroadcastTask broadcasts a task to all nodes in the cluster.
-func (cluster *cluster) BroadcastTask(task *Task) {
-	_ = cluster.EnqueueTask(task, len(cluster.nodes))
+func (cluster *cluster) BroadcastTask(task *Task) int {
+	nodes, _ := cluster.EnqueueTask(task, len(cluster.nodes))
+
+	return nodes
 }
 
 // EnqueueTask enqueues a task to be performed by a specified number of nodes in the cluster.
 // It returns an error if there are not enough nodes available to perform the task.
-func (cluster *cluster) EnqueueTask(task *Task, inNodes int) *logger.Error {
-	if len(cluster.nodes) < inNodes {
-		return helpers.Logger.ErrorF("not enough nodes to perform task")
-	}
+func (cluster *cluster) EnqueueTask(task *Task, inNodes int) (int, *logger.Error) {
+	var assigned int
 
-	alreadyAssigned := make(map[string]bool)
+	e := cluster.withLock("EnqueueTask", func() error {
+		if len(cluster.nodes) < inNodes {
+			return fmt.Errorf("not enough nodes to perform task")
+		}
 
-	for i := 0; i < inNodes; i++ {
-		for _, node := range cluster.nodes {
-			if node.properties.Status == "unhealthy" {
-				continue
-			}
+		alreadyAssigned := make(map[string]bool)
 
-			if _, ok := alreadyAssigned[node.properties.NodeIp]; !ok {
-				if node.properties.Cores*100 < node.properties.RunningThreads {
-					helpers.Logger.ErrorF("node %s is CPU overloaded", node.properties.NodeIp)
+		for i := 0; i < inNodes; i++ {
+			for _, node := range cluster.nodes {
+				if node.properties.Status == "unhealthy" {
 					continue
 				}
 
-				if node.properties.Memory-node.properties.MemoryInUse < 50 {
-					helpers.Logger.ErrorF("node %s is memory overloaded", node.properties.NodeIp)
-					continue
+				if _, ok := alreadyAssigned[node.properties.NodeIp]; !ok {
+					if node.properties.Cores*100 < node.properties.RunningThreads {
+						helpers.Logger.ErrorF("node %s is CPU overloaded", node.properties.NodeIp)
+						continue
+					}
+
+					if node.properties.Memory-node.properties.MemoryInUse < 50 {
+						helpers.Logger.ErrorF("node %s is memory overloaded", node.properties.NodeIp)
+						continue
+					}
+
+					select {
+					case node.tasks <- task:
+						helpers.Logger.LogF(100, "assigned task to %s", node.properties.NodeIp)
+						alreadyAssigned[node.properties.NodeIp] = true
+					case <-time.After(5 * time.Second):
+						helpers.Logger.ErrorF("time out assigning task to %s", node.properties.NodeIp)
+					}
 				}
-
-				node.tasks <- task
-
-				helpers.Logger.LogF(100, "assigned task to %s", node.properties.NodeIp)
-
-				alreadyAssigned[node.properties.NodeIp] = true
 			}
 		}
-	}
 
-	if len(alreadyAssigned) < inNodes {
-		return helpers.Logger.ErrorF("not enough nodes available to perform task")
-	}
+		if len(alreadyAssigned) < inNodes {
+			assigned = len(alreadyAssigned)
+			return fmt.Errorf("not enough nodes available to perform task")
+		}
 
-	return nil
+		assigned = len(alreadyAssigned)
+
+		return nil
+	})
+
+	return assigned, e
 }
