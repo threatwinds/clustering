@@ -29,14 +29,17 @@ func (cluster *cluster) Join(ctx context.Context, in *NodeProperties) (*emptypb.
 func (cluster *cluster) UpdateNode(ctx context.Context, in *NodeProperties) (*emptypb.Empty, error) {
 	node, e := cluster.getNode(in.NodeIp)
 	if e != nil {
+		if e.Is("not found") {
+			cluster.newNode(in)
+			return nil, nil
+		}
+
 		return nil, fmt.Errorf(e.Message)
 	}
 
-	if in.Timestamp < node.properties.Timestamp {
-		return nil, nil
+	if in.Timestamp > node.properties.Timestamp {
+		node.properties = in
 	}
-
-	node.properties = in
 
 	return nil, nil
 }
@@ -75,7 +78,7 @@ func (cluster *cluster) ProcessTask(srv Cluster_ProcessTaskServer) error {
 			cluster.EnqueueTask(task, nodes)
 		}
 
-		for fName, f := range cluster.callBackDict{
+		for fName, f := range cluster.callBackDict {
 			if fName == task.FunctionName {
 				go f(task)
 			}

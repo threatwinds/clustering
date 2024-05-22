@@ -2,6 +2,8 @@ package clustering
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"runtime"
 	"sync"
 	"time"
@@ -31,8 +33,14 @@ func New() *cluster {
 }
 
 func (cluster *cluster) withLock(ref string, action func() error) *logger.Error {
+	wait, _ := time.ParseDuration(fmt.Sprintf("%ds", len(cluster.nodes)*2))
+
+	if wait == 0 {
+		wait = 2 * time.Second
+	}
+
 	select {
-	case <-time.After(15 * time.Second):
+	case <-time.After(wait):
 		return helpers.Logger.ErrorF("%s: timeout waiting to lock cluster", ref)
 	case cluster.mutex <- struct{}{}:
 		defer func() { <-cluster.mutex }()
@@ -90,6 +98,8 @@ func (cluster *cluster) Start(callBackDict map[string]func(task *Task)) *logger.
 
 	go cluster.checkNodes()
 
+	go cluster.viralizeStatus()
+
 	return nil
 }
 
@@ -130,14 +140,26 @@ func (cluster *cluster) getNode(name string) (*node, *logger.Error) {
 	return node, nil
 }
 
-func (cluster *cluster) getRandomNode() (*node, *logger.Error) {
-	for _, node := range cluster.nodes {
-		if node.properties.NodeIp != cluster.localNode.properties.NodeIp {
-			return node, nil
+func (cluster *cluster) getRandomNode() (*node, *logger.Error) {	
+	for {
+		n := rand.Intn(len(cluster.nodes) - 1)
+		i := 0
+		for _, node := range cluster.nodes {
+			if i == n {
+				if node.properties.Status == "unhealthy" {
+					continue
+				}
+	
+				if node.properties.NodeIp == cluster.localNode.properties.NodeIp {
+					continue
+				}
+	
+				return node, nil
+			}
+	
+			i++
 		}
 	}
-
-	return nil, helpers.Logger.ErrorF("there is not any reachable node")
 }
 
 func (cluster *cluster) newEmptyNode(ip string) *node {
@@ -213,7 +235,6 @@ func (cluster *cluster) updateResources() {
 
 						return nil
 					})
-
 				}
 
 				return nil
@@ -221,6 +242,45 @@ func (cluster *cluster) updateResources() {
 
 			return nil
 		})
+
+		time.Sleep(10 * time.Second)
+	}
+}
+
+func (cluster *cluster) viralizeStatus() {
+	for {
+		cluster.withLock("sending resources update", func() error {
+
+			for _, node := range cluster.nodes {
+				helpers.Logger.LogF(100, "node status: %v", node.properties)
+
+				if node.properties.NodeIp == cluster.localNode.properties.NodeIp {
+					continue
+				}
+
+				alreadySent := make(map[string]bool)
+
+				for len(alreadySent) < len(cluster.listNodes()) && len(alreadySent) < 3 {
+					rNode, e := cluster.getRandomNode()
+					if e != nil {
+						continue
+					}
+
+					if _, ok := alreadySent[rNode.properties.NodeIp]; !ok {
+						rNode.withLock("viralizing node resources", func() error {
+							node.updateTo(rNode)
+							alreadySent[rNode.properties.NodeIp] = true
+
+							return nil
+						})
+					}
+				}
+			}
+
+			return nil
+		})
+
+		helpers.Logger.LogF(200, "status viralized")
 
 		time.Sleep(10 * time.Second)
 	}
@@ -234,6 +294,7 @@ func (cluster *cluster) echo() {
 					Timestamp: time.Now().UTC().UnixMilli(),
 					NodeIp:    cluster.localNode.properties.NodeIp,
 				}
+
 				node.withLock("sending echo", func() error {
 					pong, err := node.client().Echo(context.Background(), ping)
 					if err != nil {

@@ -48,7 +48,6 @@ func (node *node) setUnhealthy(cause string) {
 func (node *node) setHealthy(now, senderTime int64) {
 	if node.properties.Status != "healthy" {
 		helpers.Logger.LogF(200, "node %s is now healthy", node.properties.NodeIp)
-		go node.startSending()
 	}
 
 	node.latency = now - senderTime

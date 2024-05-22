@@ -43,6 +43,8 @@ func (node *node) connect() *logger.Error {
 
 	node.connection = conn
 
+	go node.startSending()
+
 	return nil
 }
 

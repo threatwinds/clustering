@@ -44,11 +44,11 @@ func main() {
 
 		helpers.Logger.LogF(200, "sending %d", nu)
 
-		cluster.EnqueueTask(&clustering.Task{
+		cluster.BroadcastTask(&clustering.Task{
 			AnswerTo:     cluster.MyIp(),
 			FunctionName: "print",
 			Args:         []string{fmt.Sprintf("%d", nu), cluster.MyIp()},
-		}, 1)
+		})
 
 		time.Sleep(5 * time.Second)
 	}
