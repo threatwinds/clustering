@@ -1,100 +1,243 @@
 package clustering
 
 import (
-	context "context"
-	"github.com/threatwinds/clustering/helpers"
-	"log"
-	"os"
-	sync "sync"
+	"sync"
 	"time"
+	"runtime"
+	"context"
 
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/emptypb"
+	"github.com/threatwinds/clustering/helpers"
+	"github.com/threatwinds/logger"
 )
 
-var localNode = new(Member)
-
-type connection struct {
-	cnn *grpc.ClientConn
-}
-
-func (c *connection) Client() ClusterClient {
-	return NewClusterClient(c.cnn)
-}
-
-var connections = make(map[string]*connection)
-var connectionsMutex sync.RWMutex
-
-func init() {
-	var err error
-	log.Println("cluster starting")
-
-	localNode.Name, err = os.Hostname()
-	if err != nil {
-		log.Fatalln("cannot get hostname")
-	}
-
-	localNode.Ip, err = helpers.GetMainIP()
-	if err != nil {
-		log.Fatalln("cannot get main IP")
-	}
-
-	localNode.UpTimestamp = time.Now().UTC().UnixMicro()
-
-	go discover()
-
-	go checkNodes()
-
-	go sendMasterVote()
-
-	go processVotes()
-}
-
-type Server struct {
+type Cluster struct {
+	LocalNode    *Node
+	Nodes        map[string]*Node
+	callBackDict map[string]func(task *Task) (*Result, error)
+	mutex 	     sync.RWMutex
 	UnimplementedClusterServer
 }
 
-func (s *Server) Register(ctx context.Context, in *Member) (*emptypb.Empty, error) {
-	_, err := getMember(in.Name)
-	if err != nil {
-		log.Printf("registration request from: %v", in.GetName())
+var clusterInstance *Cluster
+var clusterOnce sync.Once
 
-		membersMutex.Lock()
-		members[in.Name] = &member{
-			Name:    in.Name,
-			IP:      in.Ip,
-			Latency: -1,
-			Local: func() bool {
-				return localNode.Name == in.Name
-			}(),
-			Master: in.Master,
-			Status: "new",
-		}
-		membersMutex.Unlock()
+func New() *Cluster {
+	clusterOnce.Do(func() {
+		clusterInstance = &Cluster{}
+		clusterInstance.Nodes = make(map[string]*Node, 3)
+	})
 
-		log.Printf("discovered node %s at %s", in.Name, in.Ip)
-	}
-
-	return new(emptypb.Empty), nil
+	return clusterInstance
 }
 
-func (s *Server) Ping(srv Cluster_PingServer) error {
-	var re int
-	var name string
+func (cluster *Cluster) Start(callBackDict map[string]func(task *Task) (*Result, error)) *logger.Error {
+	helpers.Logger.LogF(200, "starting cluster")
 
-	for {
-		req, err := srv.Recv()
-		if err != nil {
-			re++
-			if re >= 2 {
-				setUnhealthy(name)
-				return err
-			}
-			time.Sleep(1 * time.Second)
-		} else {
-			re = 0
-			name = req.Name
-			setHealthy(name, time.Now().UTC().UnixMicro(), req.Timestamp)
+	var e *logger.Error
+
+	cluster.callBackDict = callBackDict
+
+	cluster.LocalNode = new(Node)
+
+	cluster.LocalNode.Latency = -1
+
+	cluster.LocalNode.tasks = make(chan *Task, 100)
+
+	cluster.LocalNode.Properties = new(NodeProperties)
+
+	cluster.LocalNode.Properties.NodeIp, e = helpers.GetMainIP()
+	if e != nil {
+		return e
+	}
+
+	cluster.LocalNode.Properties.UpSince = time.Now().UTC().UnixMilli()	
+
+	cluster.LocalNode.Properties.Status = "new"
+
+	cluster.LocalNode.Properties.DataCenter = helpers.GetCfg().DataCenter
+	
+	cluster.mutex.Lock()
+	cluster.Nodes[cluster.LocalNode.Properties.NodeIp] = cluster.LocalNode
+	cluster.mutex.Unlock()
+
+	cluster.connectToSeeds()
+
+	time.Sleep(15 * time.Second)
+
+	go cluster.updateResources()
+	
+	go cluster.echo()
+
+	time.Sleep(5 * time.Second)
+
+	go cluster.checkNodes()
+
+	return nil
+}
+
+func (cluster *Cluster) connectToSeeds() {
+	for _, seed := range helpers.GetCfg().SeedNodes{
+		node := cluster.NewEmptyNode(seed)
+		cluster.LocalNode.joinTo(node)
+	}
+}
+
+func (cluster *Cluster) ListNodes() []string {
+	cluster.mutex.RLock()
+	defer cluster.mutex.RUnlock()
+	
+	var nodes = make([]string, 0, 3)
+
+	for _, node := range cluster.Nodes {
+		nodes = append(nodes, node.Properties.NodeIp)
+	}
+
+	return nodes
+}
+
+func (cluster *Cluster) GetNode(name string) (*Node, *logger.Error) {
+	cluster.mutex.RLock()
+	defer cluster.mutex.RUnlock()
+
+	node, ok := cluster.Nodes[name]
+	if !ok{
+		return nil, helpers.Logger.ErrorF("node not found")
+	}
+
+	return node, nil
+}
+
+func (cluster *Cluster) GetRandNode() (*Node, *logger.Error) {
+	cluster.mutex.RLock()
+	defer cluster.mutex.RUnlock()
+
+	for _, node := range cluster.Nodes {
+		if node.Properties.NodeIp != cluster.LocalNode.Properties.NodeIp{
+			return node, nil
 		}
+	}
+
+	return nil, helpers.Logger.ErrorF("there is not any reachable node")
+}
+
+func (cluster *Cluster) NewEmptyNode(ip string) *Node {
+	var newNode *Node
+
+	for _, nodeIP := range cluster.ListNodes(){
+		if nodeIP == ip{
+			newNode, _ = cluster.GetNode(ip)
+		}
+	} 
+	
+	if newNode == nil {
+		cluster.mutex.Lock()
+		defer cluster.mutex.Unlock()
+		
+		newNode = &Node{
+			Properties: &NodeProperties{
+				NodeIp: ip,
+				Status: "new",
+			},
+			tasks: make(chan *Task, 100),
+		}
+
+		cluster.Nodes[newNode.Properties.NodeIp] = newNode
+	}
+
+	return newNode
+}
+
+func (cluster *Cluster) NewNode(properties *NodeProperties) *Node {
+	var newNode *Node
+
+	for _, nodeIP := range cluster.ListNodes(){
+		if nodeIP == properties.NodeIp{
+			newNode, _ = cluster.GetNode(properties.NodeIp)
+		}
+	} 
+
+	if newNode == nil {
+		cluster.mutex.Lock()
+		defer cluster.mutex.Unlock()
+
+		newNode = &Node{
+			Properties: properties,
+			tasks: make(chan *Task, 100),
+		}
+
+		cluster.Nodes[newNode.Properties.NodeIp] = newNode
+		
+		cluster.LocalNode.joinTo(newNode)
+	}
+
+	return newNode
+}
+
+
+func (cluster *Cluster) updateResources(){
+	for{
+		cluster.LocalNode.mutex.Lock()
+		
+		cpu := runtime.NumCPU()
+		cluster.LocalNode.Properties.Cores = int32(cpu)
+		
+		var mem runtime.MemStats
+		runtime.ReadMemStats(&mem)
+		cluster.LocalNode.Properties.Memory = int64(mem.HeapSys)
+		cluster.LocalNode.Properties.MemoryInUse = int64(mem.HeapInuse)
+		
+		cluster.LocalNode.Properties.Timestamp = time.Now().UTC().UnixMilli()
+		
+		cluster.LocalNode.mutex.Unlock()
+
+		for _, node := range cluster.Nodes {
+			if node.Properties.Status != "healthy"{
+				continue
+			}
+
+			_, err := node.client().UpdateNode(context.Background(), cluster.LocalNode.Properties)
+			if err != nil {
+				e := helpers.Logger.ErrorF("cannot send resources update to %s: %v", node.Properties.NodeIp, err)
+				if e.Is("node not found"){
+					cluster.LocalNode.joinTo(node)
+					continue
+				}else{
+					node.setUnhealthy(err.Error())
+					continue
+				} 
+			}
+		}
+
+		time.Sleep(10 * time.Second)
+	}
+}
+
+func (cluster *Cluster) echo() {
+	for {
+		for _, node := range cluster.Nodes{
+			ping := &Ping{
+				Timestamp: time.Now().UTC().UnixMilli(),
+				NodeIp:    cluster.LocalNode.Properties.NodeIp,
+			}
+		
+			pong, err := node.client().Echo(context.Background(), ping)
+			if err != nil {
+				e := helpers.Logger.ErrorF("cannot send ping to %s: %v", node.Properties.NodeIp, err)
+				if e.Is("node not found"){
+					cluster.LocalNode.joinTo(node)
+					continue
+				}else{
+					node.setUnhealthy(err.Error())
+					continue
+				} 
+			}
+		
+			if pong.PongTimestamp-pong.PingTimestamp > 30000 {
+				helpers.Logger.ErrorF("latency to %s is too high", node.Properties.NodeIp)
+				node.setUnhealthy("latency too high")
+			}
+		}
+
+		time.Sleep(1 * time.Second)
 	}
 }

@@ -1,66 +1,57 @@
 package clustering
 
 import (
-	"log"
 	"time"
+
+	"github.com/threatwinds/clustering/helpers"
 )
 
-func checkNodes() {
-	time.Sleep(10 * time.Second)
+func (cluster *Cluster) checkNodes() {
+	time.Sleep(60 * time.Second)
 	for {
-		membersMutex.RLock()
-		tmp := members
-		membersMutex.RUnlock()
+		cluster.mutex.Lock()
 
-		for _, node := range tmp {
-			log.Println(*node)
-			delay := time.Now().UTC().Add(-25 * time.Second).UnixMicro()
-			if node.LastKeepAlive < delay && node.Status == "healthy" {
-				setUnhealthy(node.Name)
+		for name, node := range cluster.Nodes {
+			removeDelay := time.Now().UTC().Add(-120 * time.Second).UnixMilli()
+			unhealthyDelay := time.Now().UTC().Add(-30 * time.Second).UnixMilli()
+			if node.Properties == nil{
+				continue
+			}
+
+			if node.Properties.Status != "new" && node.LastPing < removeDelay {
+				delete(cluster.Nodes, name)
+			}
+
+			if node.Properties.Status == "healthy" && node.LastPing < unhealthyDelay {
+				node.setUnhealthy("of high latency")
 			}
 		}
+
+		cluster.mutex.Unlock()
 
 		time.Sleep(10 * time.Second)
 	}
 }
 
-func setUnhealthy(name string) {
-	m, err := getMember(name)
-	if err != nil {
-		return
-	}
+func (node *Node) setUnhealthy(cause string) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 
-	membersMutex.Lock()
+	helpers.Logger.ErrorF("node %s is unhealthy becasue: %s", node.Properties.NodeIp, cause)
 
-	m.Latency = -1
-	m.Status = "unhealthy"
-	m.Master = false
-
-	members[name] = m
-
-	disconnect(m.IP)
-
-	membersMutex.Unlock()
-	if m.Local {
-		log.Fatalf("self connection lost")
-	}
+	node.Latency = -1
+	node.Properties.Status = "unhealthy"
 }
 
-func setHealthy(name string, now, senderTime int64) {
-	m, err := getMember(name)
-	if err != nil {
-		return
+func (node *Node) setHealthy(now, senderTime int64) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	
+	if node.Properties.Status != "healthy" {
+		helpers.Logger.LogF(200, "node %s is now healthy", node.Properties.NodeIp)
 	}
 
-	membersMutex.Lock()
-
-	m.Latency = float64(now-senderTime) / 1000
-	m.LastKeepAlive = senderTime
-	m.Status = "healthy"
-
-	members[name] = m
-
-	membersMutex.Unlock()
-
-	log.Printf("received keep alive from %s, %v milliseconds", name, m.Latency)
+	node.Latency = now - senderTime
+	node.LastPing = senderTime
+	node.Properties.Status = "healthy"
 }

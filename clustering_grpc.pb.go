@@ -20,22 +20,20 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Cluster_Register_FullMethodName      = "/clustering.Cluster/Register"
-	Cluster_MasterVote_FullMethodName    = "/clustering.Cluster/MasterVote"
-	Cluster_Ping_FullMethodName          = "/clustering.Cluster/Ping"
-	Cluster_Receiver_FullMethodName      = "/clustering.Cluster/Receiver"
-	Cluster_ElectedMaster_FullMethodName = "/clustering.Cluster/ElectedMaster"
+	Cluster_Join_FullMethodName        = "/clustering.Cluster/Join"
+	Cluster_UpdateNode_FullMethodName  = "/clustering.Cluster/UpdateNode"
+	Cluster_Echo_FullMethodName        = "/clustering.Cluster/Echo"
+	Cluster_ProcessTask_FullMethodName = "/clustering.Cluster/ProcessTask"
 )
 
 // ClusterClient is the client API for Cluster service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ClusterClient interface {
-	Register(ctx context.Context, in *Member, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	MasterVote(ctx context.Context, in *Vote, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	Ping(ctx context.Context, opts ...grpc.CallOption) (Cluster_PingClient, error)
-	Receiver(ctx context.Context, opts ...grpc.CallOption) (Cluster_ReceiverClient, error)
-	ElectedMaster(ctx context.Context, in *Vote, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	Join(ctx context.Context, in *NodeProperties, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	UpdateNode(ctx context.Context, in *NodeProperties, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	Echo(ctx context.Context, in *Ping, opts ...grpc.CallOption) (*Pong, error)
+	ProcessTask(ctx context.Context, opts ...grpc.CallOption) (Cluster_ProcessTaskClient, error)
 }
 
 type clusterClient struct {
@@ -46,110 +44,72 @@ func NewClusterClient(cc grpc.ClientConnInterface) ClusterClient {
 	return &clusterClient{cc}
 }
 
-func (c *clusterClient) Register(ctx context.Context, in *Member, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *clusterClient) Join(ctx context.Context, in *NodeProperties, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Cluster_Register_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, Cluster_Join_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *clusterClient) MasterVote(ctx context.Context, in *Vote, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *clusterClient) UpdateNode(ctx context.Context, in *NodeProperties, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Cluster_MasterVote_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, Cluster_UpdateNode_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *clusterClient) Ping(ctx context.Context, opts ...grpc.CallOption) (Cluster_PingClient, error) {
-	stream, err := c.cc.NewStream(ctx, &Cluster_ServiceDesc.Streams[0], Cluster_Ping_FullMethodName, opts...)
+func (c *clusterClient) Echo(ctx context.Context, in *Ping, opts ...grpc.CallOption) (*Pong, error) {
+	out := new(Pong)
+	err := c.cc.Invoke(ctx, Cluster_Echo_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &clusterPingClient{stream}
+	return out, nil
+}
+
+func (c *clusterClient) ProcessTask(ctx context.Context, opts ...grpc.CallOption) (Cluster_ProcessTaskClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Cluster_ServiceDesc.Streams[0], Cluster_ProcessTask_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &clusterProcessTaskClient{stream}
 	return x, nil
 }
 
-type Cluster_PingClient interface {
-	Send(*Pong) error
-	CloseAndRecv() (*emptypb.Empty, error)
+type Cluster_ProcessTaskClient interface {
+	Send(*Task) error
+	Recv() (*Result, error)
 	grpc.ClientStream
 }
 
-type clusterPingClient struct {
+type clusterProcessTaskClient struct {
 	grpc.ClientStream
 }
 
-func (x *clusterPingClient) Send(m *Pong) error {
+func (x *clusterProcessTaskClient) Send(m *Task) error {
 	return x.ClientStream.SendMsg(m)
 }
 
-func (x *clusterPingClient) CloseAndRecv() (*emptypb.Empty, error) {
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	m := new(emptypb.Empty)
+func (x *clusterProcessTaskClient) Recv() (*Result, error) {
+	m := new(Result)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
 	return m, nil
-}
-
-func (c *clusterClient) Receiver(ctx context.Context, opts ...grpc.CallOption) (Cluster_ReceiverClient, error) {
-	stream, err := c.cc.NewStream(ctx, &Cluster_ServiceDesc.Streams[1], Cluster_Receiver_FullMethodName, opts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &clusterReceiverClient{stream}
-	return x, nil
-}
-
-type Cluster_ReceiverClient interface {
-	Send(*Message) error
-	CloseAndRecv() (*emptypb.Empty, error)
-	grpc.ClientStream
-}
-
-type clusterReceiverClient struct {
-	grpc.ClientStream
-}
-
-func (x *clusterReceiverClient) Send(m *Message) error {
-	return x.ClientStream.SendMsg(m)
-}
-
-func (x *clusterReceiverClient) CloseAndRecv() (*emptypb.Empty, error) {
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	m := new(emptypb.Empty)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
-func (c *clusterClient) ElectedMaster(ctx context.Context, in *Vote, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Cluster_ElectedMaster_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // ClusterServer is the server API for Cluster service.
 // All implementations must embed UnimplementedClusterServer
 // for forward compatibility
 type ClusterServer interface {
-	Register(context.Context, *Member) (*emptypb.Empty, error)
-	MasterVote(context.Context, *Vote) (*emptypb.Empty, error)
-	Ping(Cluster_PingServer) error
-	Receiver(Cluster_ReceiverServer) error
-	ElectedMaster(context.Context, *Vote) (*emptypb.Empty, error)
+	Join(context.Context, *NodeProperties) (*emptypb.Empty, error)
+	UpdateNode(context.Context, *NodeProperties) (*emptypb.Empty, error)
+	Echo(context.Context, *Ping) (*Pong, error)
+	ProcessTask(Cluster_ProcessTaskServer) error
 	mustEmbedUnimplementedClusterServer()
 }
 
@@ -157,20 +117,17 @@ type ClusterServer interface {
 type UnimplementedClusterServer struct {
 }
 
-func (UnimplementedClusterServer) Register(context.Context, *Member) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Register not implemented")
+func (UnimplementedClusterServer) Join(context.Context, *NodeProperties) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Join not implemented")
 }
-func (UnimplementedClusterServer) MasterVote(context.Context, *Vote) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method MasterVote not implemented")
+func (UnimplementedClusterServer) UpdateNode(context.Context, *NodeProperties) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateNode not implemented")
 }
-func (UnimplementedClusterServer) Ping(Cluster_PingServer) error {
-	return status.Errorf(codes.Unimplemented, "method Ping not implemented")
+func (UnimplementedClusterServer) Echo(context.Context, *Ping) (*Pong, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Echo not implemented")
 }
-func (UnimplementedClusterServer) Receiver(Cluster_ReceiverServer) error {
-	return status.Errorf(codes.Unimplemented, "method Receiver not implemented")
-}
-func (UnimplementedClusterServer) ElectedMaster(context.Context, *Vote) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ElectedMaster not implemented")
+func (UnimplementedClusterServer) ProcessTask(Cluster_ProcessTaskServer) error {
+	return status.Errorf(codes.Unimplemented, "method ProcessTask not implemented")
 }
 func (UnimplementedClusterServer) mustEmbedUnimplementedClusterServer() {}
 
@@ -185,110 +142,84 @@ func RegisterClusterServer(s grpc.ServiceRegistrar, srv ClusterServer) {
 	s.RegisterService(&Cluster_ServiceDesc, srv)
 }
 
-func _Cluster_Register_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Member)
+func _Cluster_Join_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NodeProperties)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ClusterServer).Register(ctx, in)
+		return srv.(ClusterServer).Join(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Cluster_Register_FullMethodName,
+		FullMethod: Cluster_Join_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClusterServer).Register(ctx, req.(*Member))
+		return srv.(ClusterServer).Join(ctx, req.(*NodeProperties))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Cluster_MasterVote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Vote)
+func _Cluster_UpdateNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NodeProperties)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ClusterServer).MasterVote(ctx, in)
+		return srv.(ClusterServer).UpdateNode(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Cluster_MasterVote_FullMethodName,
+		FullMethod: Cluster_UpdateNode_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClusterServer).MasterVote(ctx, req.(*Vote))
+		return srv.(ClusterServer).UpdateNode(ctx, req.(*NodeProperties))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Cluster_Ping_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(ClusterServer).Ping(&clusterPingServer{stream})
+func _Cluster_Echo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Ping)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusterServer).Echo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cluster_Echo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusterServer).Echo(ctx, req.(*Ping))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
-type Cluster_PingServer interface {
-	SendAndClose(*emptypb.Empty) error
-	Recv() (*Pong, error)
+func _Cluster_ProcessTask_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ClusterServer).ProcessTask(&clusterProcessTaskServer{stream})
+}
+
+type Cluster_ProcessTaskServer interface {
+	Send(*Result) error
+	Recv() (*Task, error)
 	grpc.ServerStream
 }
 
-type clusterPingServer struct {
+type clusterProcessTaskServer struct {
 	grpc.ServerStream
 }
 
-func (x *clusterPingServer) SendAndClose(m *emptypb.Empty) error {
+func (x *clusterProcessTaskServer) Send(m *Result) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func (x *clusterPingServer) Recv() (*Pong, error) {
-	m := new(Pong)
+func (x *clusterProcessTaskServer) Recv() (*Task, error) {
+	m := new(Task)
 	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
 	return m, nil
-}
-
-func _Cluster_Receiver_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(ClusterServer).Receiver(&clusterReceiverServer{stream})
-}
-
-type Cluster_ReceiverServer interface {
-	SendAndClose(*emptypb.Empty) error
-	Recv() (*Message, error)
-	grpc.ServerStream
-}
-
-type clusterReceiverServer struct {
-	grpc.ServerStream
-}
-
-func (x *clusterReceiverServer) SendAndClose(m *emptypb.Empty) error {
-	return x.ServerStream.SendMsg(m)
-}
-
-func (x *clusterReceiverServer) Recv() (*Message, error) {
-	m := new(Message)
-	if err := x.ServerStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
-func _Cluster_ElectedMaster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Vote)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ClusterServer).ElectedMaster(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Cluster_ElectedMaster_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClusterServer).ElectedMaster(ctx, req.(*Vote))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 // Cluster_ServiceDesc is the grpc.ServiceDesc for Cluster service.
@@ -299,27 +230,23 @@ var Cluster_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*ClusterServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "Register",
-			Handler:    _Cluster_Register_Handler,
+			MethodName: "Join",
+			Handler:    _Cluster_Join_Handler,
 		},
 		{
-			MethodName: "MasterVote",
-			Handler:    _Cluster_MasterVote_Handler,
+			MethodName: "UpdateNode",
+			Handler:    _Cluster_UpdateNode_Handler,
 		},
 		{
-			MethodName: "ElectedMaster",
-			Handler:    _Cluster_ElectedMaster_Handler,
+			MethodName: "Echo",
+			Handler:    _Cluster_Echo_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "Ping",
-			Handler:       _Cluster_Ping_Handler,
-			ClientStreams: true,
-		},
-		{
-			StreamName:    "Receiver",
-			Handler:       _Cluster_Receiver_Handler,
+			StreamName:    "ProcessTask",
+			Handler:       _Cluster_ProcessTask_Handler,
+			ServerStreams: true,
 			ClientStreams: true,
 		},
 	},

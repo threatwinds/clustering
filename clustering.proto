@@ -7,33 +7,43 @@ package clustering;
 option go_package = "github.com/threatwinds/clustering";
 
 service Cluster{
-    rpc Register(Member) returns (google.protobuf.Empty) {}
-    rpc MasterVote(Vote) returns (google.protobuf.Empty){}
-    rpc Ping(stream Pong) returns (google.protobuf.Empty){}
-    rpc Receiver(stream Message) returns (google.protobuf.Empty){}
-    rpc ElectedMaster(Vote) returns (google.protobuf.Empty){}
+    rpc Join(NodeProperties) returns (google.protobuf.Empty){}
+    rpc UpdateNode(NodeProperties) returns (google.protobuf.Empty){}
+    rpc Echo(Ping) returns (Pong);
+    rpc ProcessTask(stream Task) returns (stream Result);
 }
 
-message Member {
-    string name = 1;
-    string ip = 2;
-    bool master = 3;
-    int64 upTimestamp = 4;
+message NodeProperties {
+    string nodeIp = 1;
+    int32  dataCenter = 2;
+    int32  rack = 3;
+    int32  cores = 4;
+    int32  runningThreads = 5;
+    int64  memory = 6;
+    int64  memoryInUse = 7;
+    int64  timestamp = 8;
+    string status = 9;
+    int64  UpSince = 10;
+}
+
+message Ping {
+    string nodeIp = 1;
+    int64  timestamp = 2;
 }
 
 message Pong {
-    string name = 1;
-    int64 timestamp = 2;
+    int64 pingTimestamp = 1;
+    int64 pongTimestamp = 2;
 }
 
-message Vote {
-    string name = 1;
+message Task {
+    string answerTo = 1;
+    string functionName = 2;
+    string thread = 3;
+    repeated string args = 4;
 }
 
-message Message {
-    string kind = 1;
-    string thread = 2;
-    string value = 3;
+message Result {
+    string thread = 1;
+    string result = 2;
 }
-
-
