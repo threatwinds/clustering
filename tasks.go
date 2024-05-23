@@ -21,18 +21,14 @@ func (cluster *cluster) EnqueueTask(task *Task, inNodes int) (int, *logger.Error
 	var assigned int
 
 	e := cluster.withLock("EnqueueTask", func() error {
-		if len(cluster.nodes) < inNodes {
+		if len(cluster.healthyNodes()) < inNodes {
 			return fmt.Errorf("not enough nodes to perform task")
 		}
 
 		alreadyAssigned := make(map[string]bool)
 
 		for i := 0; i < inNodes; i++ {
-			for _, node := range cluster.nodes {
-				if node.properties.Status == "unhealthy" {
-					continue
-				}
-
+			for _, node := range cluster.healthyNodes() {
 				if _, ok := alreadyAssigned[node.properties.NodeIp]; !ok {
 					if node.properties.Cores*int32(len(cluster.nodes)*20) < node.properties.RunningThreads {
 						helpers.Logger.ErrorF("node %s is CPU overloaded", node.properties.NodeIp)
@@ -46,10 +42,9 @@ func (cluster *cluster) EnqueueTask(task *Task, inNodes int) (int, *logger.Error
 
 					select {
 					case node.tasks <- task:
-						helpers.Logger.LogF(100, "assigned task to %s", node.properties.NodeIp)
 						alreadyAssigned[node.properties.NodeIp] = true
 					case <-time.After(5 * time.Second):
-						helpers.Logger.ErrorF("time out assigning task to %s", node.properties.NodeIp)
+						node.setUnhealthy("time out assigning task")
 					}
 				}
 			}

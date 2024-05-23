@@ -72,7 +72,7 @@ func (cluster *cluster) Start(callBackDict map[string]func(task *Task)) *logger.
 
 	cluster.localNode.latency = -1
 
-	cluster.localNode.tasks = make(chan *Task, 100)
+	cluster.localNode.tasks = make(chan *Task)
 
 	cluster.localNode.mutex = make(chan struct{}, 1)
 
@@ -186,7 +186,7 @@ func (cluster *cluster) newEmptyNode(ip string) *node {
 				NodeIp: ip,
 				Status: "new",
 			},
-			tasks: make(chan *Task, 100),
+			tasks: make(chan *Task),
 			mutex: make(chan struct{}, 1),
 		}
 
@@ -211,7 +211,7 @@ func (cluster *cluster) newNode(properties *NodeProperties) *node {
 	if newNode == nil {
 		newNode = &node{
 			properties: properties,
-			tasks:      make(chan *Task, 100),
+			tasks:      make(chan *Task),
 			mutex:      make(chan struct{}, 1),
 		}
 
@@ -291,7 +291,7 @@ func (cluster *cluster) viralizeStatus() {
 
 			return nil
 		})
-		
+
 		time.Sleep(10 * time.Second)
 	}
 }
