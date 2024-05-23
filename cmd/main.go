@@ -13,7 +13,7 @@ import (
 )
 
 func printMsg(task *clustering.Task) {
-	helpers.Logger.LogF(200, "received task %s with args %v", task.FunctionName, task.Args)
+	helpers.Logger.LogF(100, "received task %s with args %v", task.FunctionName, task.Args)
 }
 
 func main() {
@@ -42,7 +42,7 @@ func main() {
 	for {
 		nu := rand.Intn(1000)
 
-		helpers.Logger.LogF(200, "sending %d", nu)
+		helpers.Logger.LogF(100, "sending %d", nu)
 
 		cluster.BroadcastTask(&clustering.Task{
 			AnswerTo:     cluster.MyIp(),

@@ -89,6 +89,8 @@ func (cluster *cluster) Start(callBackDict map[string]func(task *Task)) *logger.
 
 	cluster.localNode.properties.DataCenter = helpers.GetCfg().DataCenter
 
+	cluster.localNode.properties.Rack = helpers.GetCfg().Rack
+
 	cluster.nodes[cluster.localNode.properties.NodeIp] = cluster.localNode
 
 	cluster.connectToSeeds()
@@ -112,23 +114,23 @@ func (cluster *cluster) Start(callBackDict map[string]func(task *Task)) *logger.
 func (cluster *cluster) connectToSeeds() {
 	cluster.withLock("connect to seed", func() error {
 		for _, seed := range helpers.GetCfg().SeedNodes {
-			node := cluster.newEmptyNode(seed)
-			cluster.localNode.joinTo(node)
+			cluster.newEmptyNode(seed)
 		}
 
 		return nil
 	})
 }
 
-// listNodes returns a list of active nodes in the cluster.
-func (cluster *cluster) listNodes() []string {
-	var nodes = make([]string, 0, 3)
+// healthyNodes returns a list of healthy nodes in the cluster.
+func (cluster *cluster) healthyNodes() []*node {
+	var nodes = make([]*node, 0, 3)
 
 	for _, node := range cluster.nodes {
 		if node.properties.Status == "unhealthy" {
 			continue
 		}
-		nodes = append(nodes, node.properties.NodeIp)
+
+		nodes = append(nodes, node)
 	}
 
 	return nodes
@@ -149,36 +151,32 @@ func (cluster *cluster) getNode(name string) (*node, *logger.Error) {
 	return node, nil
 }
 
-// getRandomNode returns a random active node from the cluster.
-func (cluster *cluster) getRandomNode() (*node, *logger.Error) {	
+// getRandomNode returns a random healthy node from the cluster. It excludes the local node.
+func (cluster *cluster) getRandomNode() (*node, *logger.Error) {
 	for {
-		n := rand.Intn(len(cluster.nodes) - 1)
+		n := rand.Intn(len(cluster.healthyNodes()) - 1)
 		i := 0
-		for _, node := range cluster.nodes {
+		for _, node := range cluster.healthyNodes() {
 			if i == n {
-				if node.properties.Status == "unhealthy" {
-					continue
-				}
-	
 				if node.properties.NodeIp == cluster.localNode.properties.NodeIp {
 					continue
 				}
-	
+
 				return node, nil
 			}
-	
+
 			i++
 		}
 	}
 }
 
-// newEmptyNode creates a new empty node with the specified IP address.
+// newEmptyNode creates a new empty node with the specified IP address if it does not exist and joins it to the cluster.
 func (cluster *cluster) newEmptyNode(ip string) *node {
 	var newNode *node
 
-	for _, nodeIP := range cluster.listNodes() {
-		if nodeIP == ip {
-			newNode, _ = cluster.getNode(ip)
+	for _, node := range cluster.nodes {
+		if node.properties.NodeIp == ip {
+			newNode = node
 		}
 	}
 
@@ -193,18 +191,20 @@ func (cluster *cluster) newEmptyNode(ip string) *node {
 		}
 
 		cluster.nodes[newNode.properties.NodeIp] = newNode
+
+		cluster.localNode.joinTo(newNode)
 	}
 
 	return newNode
 }
 
-// newNode creates a new node with the specified properties and joins it to the cluster.
+// newNode creates a new node with the specified properties if it does not exist and joins it to the cluster.
 func (cluster *cluster) newNode(properties *NodeProperties) *node {
 	var newNode *node
 
-	for _, nodeIP := range cluster.listNodes() {
-		if nodeIP == properties.NodeIp {
-			newNode, _ = cluster.getNode(properties.NodeIp)
+	for _, node := range cluster.nodes {
+		if node.properties.NodeIp == properties.NodeIp {
+			newNode = node
 		}
 	}
 
@@ -239,14 +239,11 @@ func (cluster *cluster) updateResources() {
 			cluster.localNode.properties.Timestamp = time.Now().UTC().UnixMilli()
 
 			cluster.withLock("sending resources update", func() error {
-				for _, node := range cluster.nodes {
-					if node.properties.Status == "unhealthy" {
-						continue
-					}
-					
+				for _, node := range cluster.healthyNodes() {
 					if node.properties.NodeIp == cluster.localNode.properties.NodeIp {
 						continue
 					}
+
 					node.withLock("sending resources update", func() error {
 						cluster.localNode.updateTo(node)
 
@@ -269,15 +266,13 @@ func (cluster *cluster) viralizeStatus() {
 	for {
 		cluster.withLock("sending resources update", func() error {
 			for _, node := range cluster.nodes {
-				helpers.Logger.LogF(200, "node status: %v", node.properties)
-
 				if node.properties.NodeIp == cluster.localNode.properties.NodeIp {
 					continue
 				}
 
 				alreadySent := make(map[string]bool)
 
-				for len(alreadySent) < len(cluster.listNodes()) && len(alreadySent) < 3 {
+				for len(alreadySent) < len(cluster.healthyNodes()) && len(alreadySent) < 3 {
 					rNode, e := cluster.getRandomNode()
 					if e != nil {
 						continue
@@ -296,9 +291,7 @@ func (cluster *cluster) viralizeStatus() {
 
 			return nil
 		})
-
-		helpers.Logger.LogF(100, "status viralized")
-
+		
 		time.Sleep(10 * time.Second)
 	}
 }
@@ -316,18 +309,11 @@ func (cluster *cluster) echo() {
 				node.withLock("sending echo", func() error {
 					pong, err := node.client().Echo(context.Background(), ping)
 					if err != nil {
-						e := helpers.Logger.ErrorF("cannot send ping to %s: %v", node.properties.NodeIp, err)
-						if e.Is("node not found") {
-							cluster.localNode.joinTo(node)
-							return nil
-						} else {
-							node.setUnhealthy(err.Error())
-							return nil
-						}
+						node.setUnhealthy(err.Error())
+						return fmt.Errorf("cannot send ping to %s: %v", node.properties.NodeIp, err)
 					}
 
 					if pong.PongTimestamp-pong.PingTimestamp > 30000 {
-						helpers.Logger.ErrorF("latency to %s is too high", node.properties.NodeIp)
 						node.setUnhealthy("latency too high")
 					}
 
