@@ -1,6 +1,7 @@
 package clustering
 
 import (
+	"os"
 	"time"
 
 	"github.com/threatwinds/clustering/helpers"
@@ -36,6 +37,11 @@ func (cluster *cluster) checkNodes() {
 
 			for _, name := range deleteQueue {
 				delete(cluster.nodes, name)
+			}
+
+			if cluster.localNode.properties.Status == "unhealthy" {
+				helpers.Logger.ErrorF("local node is unhealthy")
+				os.Exit(500)
 			}
 
 			return nil
