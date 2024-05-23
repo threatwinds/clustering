@@ -8,7 +8,7 @@ import (
 
 var Logger = logger.NewLogger(&logger.Config{
 	Format: "text",
-	Level:  200,
+	Level:  int(GetCfg().LogLevel),
 	Retries: 3,
 	Wait: 1,
 	Output: "stdout",

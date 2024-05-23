@@ -14,8 +14,8 @@ func (cluster *cluster) checkNodes() {
 	for {
 		cluster.withLock("checking node health", func() error {
 			for name, node := range cluster.nodes {
-				removeDelay := time.Now().UTC().Add(-120 * time.Second).UnixMilli()
-				unhealthyDelay := time.Now().UTC().Add(-30 * time.Second).UnixMilli()
+				removeDelay := time.Now().UTC().Add(-30 * time.Second).UnixMilli()
+				unhealthyDelay := time.Now().UTC().Add(-10 * time.Second).UnixMilli()
 				
 				node.withLock("checking node health", func() error {
 					if node.properties == nil {

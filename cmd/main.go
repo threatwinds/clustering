@@ -50,6 +50,6 @@ func main() {
 			Args:         []string{fmt.Sprintf("%d", nu), cluster.MyIp()},
 		})
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(50 * time.Second)
 	}
 }

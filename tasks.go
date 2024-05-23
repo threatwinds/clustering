@@ -34,7 +34,7 @@ func (cluster *cluster) EnqueueTask(task *Task, inNodes int) (int, *logger.Error
 				}
 
 				if _, ok := alreadyAssigned[node.properties.NodeIp]; !ok {
-					if node.properties.Cores*100 < node.properties.RunningThreads {
+					if node.properties.Cores*int32(len(cluster.nodes)*20) < node.properties.RunningThreads {
 						helpers.Logger.ErrorF("node %s is CPU overloaded", node.properties.NodeIp)
 						continue
 					}

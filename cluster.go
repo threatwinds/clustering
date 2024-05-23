@@ -240,6 +240,10 @@ func (cluster *cluster) updateResources() {
 
 			cluster.withLock("sending resources update", func() error {
 				for _, node := range cluster.nodes {
+					if node.properties.Status == "unhealthy" {
+						continue
+					}
+					
 					if node.properties.NodeIp == cluster.localNode.properties.NodeIp {
 						continue
 					}
@@ -264,9 +268,8 @@ func (cluster *cluster) updateResources() {
 func (cluster *cluster) viralizeStatus() {
 	for {
 		cluster.withLock("sending resources update", func() error {
-
 			for _, node := range cluster.nodes {
-				helpers.Logger.LogF(100, "node status: %v", node.properties)
+				helpers.Logger.LogF(200, "node status: %v", node.properties)
 
 				if node.properties.NodeIp == cluster.localNode.properties.NodeIp {
 					continue
@@ -294,7 +297,7 @@ func (cluster *cluster) viralizeStatus() {
 			return nil
 		})
 
-		helpers.Logger.LogF(200, "status viralized")
+		helpers.Logger.LogF(100, "status viralized")
 
 		time.Sleep(10 * time.Second)
 	}
