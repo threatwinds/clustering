@@ -29,9 +29,9 @@ func (node *node) client() ClusterClient {
 }
 
 // connect establishes a connection to the node.
-func (node *node) connect() *logger.Error {
+func (node *node) connect() {
 	if node.connection != nil {
-		return nil
+		return
 	}
 
 	helpers.Logger.LogF(200, "connecting to %s", node.properties.NodeIp)
@@ -44,19 +44,18 @@ func (node *node) connect() *logger.Error {
 		if err != nil {
 			return err
 		}
-		
+
 		node.connection = conn
 
 		go node.startSending()
-		
+
 		return nil
 	})
-	if err != nil {
-		node.setUnhealthy(err.Error())
-		return helpers.Logger.ErrorF("error establishing connection: %v", err)
-	}
 
-	return nil
+	if err != nil {
+		e := helpers.Logger.ErrorF("error connecting to %s: %v", node.properties.NodeIp, err)
+		node.setUnhealthy(e.Message)
+	}
 }
 
 // startSending starts sending tasks to the node.
@@ -64,8 +63,8 @@ func (node *node) startSending() {
 	client := NewClusterClient(node.connection)
 	pTaskClient, err := client.ProcessTask(context.Background())
 	if err != nil {
-		helpers.Logger.ErrorF("error sending task: %v", err)
-		node.setUnhealthy(err.Error())
+		e := helpers.Logger.ErrorF("error sending task: %v", err)
+		node.setUnhealthy(e.Message)
 		return
 	}
 	for {
@@ -76,15 +75,15 @@ func (node *node) startSending() {
 		})
 
 		if err != nil {
-			helpers.Logger.ErrorF("error sending task: %v", err)
-			node.setUnhealthy(err.Error())
+			e := helpers.Logger.ErrorF("error sending task: %v", err)
+			node.setUnhealthy(e.Message)
 			return
 		}
 	}
 }
 
 // joinTo joins the current node to a new node in the cluster.
-func (node *node) joinTo(newNode *node) *logger.Error {
+func (node *node) joinTo(newNode *node) {
 	err := helpers.Logger.Retry(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -94,25 +93,21 @@ func (node *node) joinTo(newNode *node) *logger.Error {
 	})
 
 	if err != nil {
-		node.setUnhealthy(err.Error())
-		return helpers.Logger.ErrorF("error registering from %s to %s, %v", node.properties.NodeIp, newNode.properties.NodeIp, err)
+		e := helpers.Logger.ErrorF("error registering from %s to %s, %v", node.properties.NodeIp, newNode.properties.NodeIp, err)
+		node.setUnhealthy(e.Message)
 	}
-
-	return nil
 }
 
 // updateTo updates the current node's properties to the destination node.
-func (node *node) updateTo(dstNode *node) *logger.Error {
+func (node *node) updateTo(dstNode *node) {
 	err := helpers.Logger.Retry(func() error {
 		_, err := dstNode.client().UpdateNode(context.Background(), node.properties)
 		return err
 	})
 	if err != nil {
-		dstNode.setUnhealthy(err.Error())
-		return helpers.Logger.ErrorF("cannot send resources update to %s: %v", dstNode.properties.NodeIp, err)
+		e := helpers.Logger.ErrorF("cannot send resources update to %s: %v", dstNode.properties.NodeIp, err)
+		dstNode.setUnhealthy(e.Message)
 	}
-
-	return nil
 }
 
 // withLock acquires a lock on the node and performs the specified action.
@@ -121,7 +116,11 @@ func (node *node) withLock(ref string, action func() error) *logger.Error {
 	case <-time.After(10 * time.Second):
 		return helpers.Logger.ErrorF("%s: timeout waiting to lock %s", ref, node.properties.NodeIp)
 	case node.mutex <- struct{}{}:
-		defer func() { <-node.mutex }()
+		defer func() {
+			<-node.mutex
+			helpers.Logger.LogF(100, "%s: released node %s", ref, node.properties.NodeIp)
+		}()
+		helpers.Logger.LogF(100, "%s: locked node %s", ref, node.properties.NodeIp)
 	}
 
 	err := action()

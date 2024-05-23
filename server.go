@@ -17,12 +17,16 @@ func (cluster *cluster) Join(ctx context.Context, in *NodeProperties) (*emptypb.
 		"received register request from %s",
 		in.NodeIp,
 	)
+	go func() {
+		newNode, e := cluster.newNode(in)
+		if e != nil {
+			return
+		}
 
-	newNode := cluster.newNode(in)
-
-	if in.Timestamp > newNode.properties.Timestamp {
-		newNode.properties = in
-	}
+		if in.Timestamp > newNode.properties.Timestamp {
+			newNode.properties = in
+		}
+	}()
 
 	return nil, nil
 }
@@ -42,6 +46,10 @@ func (cluster *cluster) UpdateNode(ctx context.Context, in *NodeProperties) (*em
 
 	if in.Timestamp > node.properties.Timestamp {
 		node.properties = in
+
+		if node.properties.Status == "unhealthy" {
+			helpers.Logger.LogF(200, "received update declaring node %s unhealthy", node.properties.NodeIp)
+		}
 	}
 
 	return nil, nil
@@ -50,14 +58,22 @@ func (cluster *cluster) UpdateNode(ctx context.Context, in *NodeProperties) (*em
 // Echo is a method that handles the ping-pong mechanism between nodes in the cluster.
 // It receives a ping message from a node, updates the node's health status, and sends back a pong message.
 func (cluster *cluster) Echo(ctx context.Context, in *Ping) (*Pong, error) {
+	now := time.Now().UTC().UnixMilli()
+
 	node, e := cluster.getNode(in.NodeIp)
 	if e != nil {
 		return nil, fmt.Errorf(e.Message)
 	}
 
-	now := time.Now().UTC().UnixMilli()
+	node.lastPing = now
 
-	node.setHealthy(now, in.Timestamp)
+	node.latency = now - in.Timestamp
+
+	if in.Timestamp > time.Now().UTC().Add(-10*time.Second).UnixMilli() {
+		node.setHealthy()
+	} else {
+		node.setUnhealthy("high latency")
+	}
 
 	return &Pong{
 		PingTimestamp: in.Timestamp,

@@ -21,7 +21,7 @@ func GetMainIP() (string, *logger.Error) {
 }
 
 func TestPort(ip string, port int) bool {
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(ip, fmt.Sprintf("%d", port)), 5*time.Second)
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(ip, fmt.Sprintf("%d", port)), 30*time.Second)
 	if err != nil {
 		return false
 	}

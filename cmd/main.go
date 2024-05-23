@@ -13,7 +13,7 @@ import (
 )
 
 func printMsg(task *clustering.Task) {
-	helpers.Logger.LogF(100, "received task %s with args %v", task.FunctionName, task.Args)
+	helpers.Logger.LogF(200, "received task %s with args %v", task.FunctionName, task.Args)
 }
 
 func main() {

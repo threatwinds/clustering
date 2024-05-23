@@ -37,17 +37,21 @@ func New() *cluster {
 
 // withLock acquires a lock on the cluster and performs the specified action.
 func (cluster *cluster) withLock(ref string, action func() error) *logger.Error {
-	wait, _ := time.ParseDuration(fmt.Sprintf("%ds", len(cluster.nodes)*2))
+	wait, _ := time.ParseDuration(fmt.Sprintf("%ds", len(cluster.nodes)*20))
 
 	if wait == 0 {
-		wait = 2 * time.Second
+		wait = 20 * time.Second
 	}
 
 	select {
 	case <-time.After(wait):
 		return helpers.Logger.ErrorF("%s: timeout waiting to lock cluster", ref)
 	case cluster.mutex <- struct{}{}:
-		defer func() { <-cluster.mutex }()
+		defer func() { 
+			<-cluster.mutex 
+			helpers.Logger.LogF(100, "%s: released cluster", ref)
+		}()
+		helpers.Logger.LogF(100, "%s: locked cluster", ref)
 	}
 
 	err := action()
@@ -97,13 +101,17 @@ func (cluster *cluster) Start(callBackDict map[string]func(task *Task)) *logger.
 
 	time.Sleep(15 * time.Second)
 
-	go cluster.updateResources()
-
 	go cluster.echo()
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(15 * time.Second)
+
+	go cluster.updateResources()
+
+	time.Sleep(15 * time.Second)
 
 	go cluster.checkNodes()
+
+	time.Sleep(15 * time.Second)
 
 	go cluster.viralizeStatus()
 
@@ -112,26 +120,41 @@ func (cluster *cluster) Start(callBackDict map[string]func(task *Task)) *logger.
 
 // connectToSeeds connects to the seed nodes in the cluster.
 func (cluster *cluster) connectToSeeds() {
-	cluster.withLock("connect to seed", func() error {
-		for _, seed := range helpers.GetCfg().SeedNodes {
-			cluster.newEmptyNode(seed)
-		}
-
-		return nil
-	})
+	for _, seed := range helpers.GetCfg().SeedNodes {
+		cluster.newEmptyNode(seed)
+	}
 }
 
 // healthyNodes returns a list of healthy nodes in the cluster.
 func (cluster *cluster) healthyNodes() []*node {
 	var nodes = make([]*node, 0, 3)
 
-	for _, node := range cluster.nodes {
-		if node.properties.Status == "unhealthy" {
-			continue
+	cluster.withLock("healthy nodes", func() error {
+		for _, node := range cluster.nodes {
+			if node.properties.Status == "unhealthy" {
+				continue
+			}
+
+			nodes = append(nodes, node)
 		}
 
-		nodes = append(nodes, node)
-	}
+		return nil
+	})
+
+	return nodes
+}
+
+// allNodes returns a list of nodes in the cluster.
+func (cluster *cluster) allNodes() []*node {
+	var nodes = make([]*node, 0, 3)
+
+	cluster.withLock("all nodes", func() error {
+		for _, node := range cluster.nodes {
+			nodes = append(nodes, node)
+		}
+
+		return nil
+	})
 
 	return nodes
 }
@@ -143,7 +166,14 @@ func (cluster *cluster) MyIp() string {
 
 // getNode returns the node with the specified name.
 func (cluster *cluster) getNode(name string) (*node, *logger.Error) {
-	node, ok := cluster.nodes[name]
+	var node *node
+	var ok bool
+
+	cluster.withLock("get node", func() error {
+		node, ok = cluster.nodes[name]
+		return nil
+	})
+
 	if !ok {
 		return nil, helpers.Logger.ErrorF("node not found")
 	}
@@ -153,6 +183,10 @@ func (cluster *cluster) getNode(name string) (*node, *logger.Error) {
 
 // getRandomNode returns a random healthy node from the cluster. It excludes the local node.
 func (cluster *cluster) getRandomNode() (*node, *logger.Error) {
+	if len(cluster.healthyNodes()) <= 1 {
+		return nil, helpers.Logger.ErrorF("no other healthy nodes in the cluster")
+	}
+
 	for {
 		n := rand.Intn(len(cluster.healthyNodes()) - 1)
 		i := 0
@@ -171,56 +205,63 @@ func (cluster *cluster) getRandomNode() (*node, *logger.Error) {
 }
 
 // newEmptyNode creates a new empty node with the specified IP address if it does not exist and joins it to the cluster.
-func (cluster *cluster) newEmptyNode(ip string) *node {
+func (cluster *cluster) newEmptyNode(ip string) (*node, *logger.Error) {
 	var newNode *node
 
-	for _, node := range cluster.nodes {
+	for _, node := range cluster.allNodes() {
 		if node.properties.NodeIp == ip {
 			newNode = node
 		}
 	}
 
-	if newNode == nil {
-		newNode = &node{
-			properties: &NodeProperties{
-				NodeIp: ip,
-				Status: "new",
-			},
-			tasks: make(chan *Task),
-			mutex: make(chan struct{}, 1),
+	e := cluster.withLock("new node", func() error {
+		if newNode == nil {
+			newNode = &node{
+				properties: &NodeProperties{
+					NodeIp: ip,
+					Status: "new",
+				},
+				tasks: make(chan *Task),
+				mutex: make(chan struct{}, 1),
+			}
+
+			cluster.nodes[newNode.properties.NodeIp] = newNode
+
+			go cluster.localNode.joinTo(newNode)
 		}
+		return nil
+	})
 
-		cluster.nodes[newNode.properties.NodeIp] = newNode
-
-		cluster.localNode.joinTo(newNode)
-	}
-
-	return newNode
+	return newNode, e
 }
 
 // newNode creates a new node with the specified properties if it does not exist and joins it to the cluster.
-func (cluster *cluster) newNode(properties *NodeProperties) *node {
+func (cluster *cluster) newNode(properties *NodeProperties) (*node, *logger.Error) {
 	var newNode *node
 
-	for _, node := range cluster.nodes {
+	for _, node := range cluster.allNodes() {
 		if node.properties.NodeIp == properties.NodeIp {
 			newNode = node
 		}
 	}
 
-	if newNode == nil {
-		newNode = &node{
-			properties: properties,
-			tasks:      make(chan *Task),
-			mutex:      make(chan struct{}, 1),
+	e := cluster.withLock("new node", func() error {
+		if newNode == nil {
+			newNode = &node{
+				properties: properties,
+				tasks:      make(chan *Task),
+				mutex:      make(chan struct{}, 1),
+			}
+
+			cluster.nodes[newNode.properties.NodeIp] = newNode
+
+			go cluster.localNode.joinTo(newNode)
 		}
 
-		cluster.nodes[newNode.properties.NodeIp] = newNode
+		return nil
+	})
 
-		cluster.localNode.joinTo(newNode)
-	}
-
-	return newNode
+	return newNode, e
 }
 
 // updateResources updates the resources of the local node and sends updates to other nodes in the cluster.
@@ -238,21 +279,13 @@ func (cluster *cluster) updateResources() {
 
 			cluster.localNode.properties.Timestamp = time.Now().UTC().UnixMilli()
 
-			cluster.withLock("sending resources update", func() error {
-				for _, node := range cluster.healthyNodes() {
-					if node.properties.NodeIp == cluster.localNode.properties.NodeIp {
-						continue
-					}
-
-					node.withLock("sending resources update", func() error {
-						cluster.localNode.updateTo(node)
-
-						return nil
-					})
+			for _, node := range cluster.healthyNodes() {
+				if node.properties.NodeIp == cluster.localNode.properties.NodeIp {
+					continue
 				}
 
-				return nil
-			})
+				cluster.localNode.updateTo(node)
+			}
 
 			return nil
 		})
@@ -264,33 +297,26 @@ func (cluster *cluster) updateResources() {
 // viralizeStatus sends the status updates of the local node to other nodes in the cluster.
 func (cluster *cluster) viralizeStatus() {
 	for {
-		cluster.withLock("sending resources update", func() error {
-			for _, node := range cluster.nodes {
-				if node.properties.NodeIp == cluster.localNode.properties.NodeIp {
+		for _, node := range cluster.healthyNodes() {
+			if node.properties.NodeIp == cluster.localNode.properties.NodeIp {
+				continue
+			}
+
+			alreadySent := make(map[string]bool)
+
+			for len(alreadySent) < len(cluster.healthyNodes()) && len(alreadySent) < 3 {
+				rNode, e := cluster.getRandomNode()
+				if e != nil {
+					time.Sleep(10 * time.Second)
 					continue
 				}
 
-				alreadySent := make(map[string]bool)
-
-				for len(alreadySent) < len(cluster.healthyNodes()) && len(alreadySent) < 3 {
-					rNode, e := cluster.getRandomNode()
-					if e != nil {
-						continue
-					}
-
-					if _, ok := alreadySent[rNode.properties.NodeIp]; !ok {
-						rNode.withLock("viralizing node resources", func() error {
-							node.updateTo(rNode)
-							alreadySent[rNode.properties.NodeIp] = true
-
-							return nil
-						})
-					}
+				if _, ok := alreadySent[rNode.properties.NodeIp]; !ok {
+					node.updateTo(rNode)
+					alreadySent[rNode.properties.NodeIp] = true
 				}
 			}
-
-			return nil
-		})
+		}
 
 		time.Sleep(10 * time.Second)
 	}
@@ -299,30 +325,22 @@ func (cluster *cluster) viralizeStatus() {
 // echo sends a ping to other nodes in the cluster and checks their response.
 func (cluster *cluster) echo() {
 	for {
-		cluster.withLock("sending echo", func() error {
-			for _, node := range cluster.nodes {
-				ping := &Ping{
-					Timestamp: time.Now().UTC().UnixMilli(),
-					NodeIp:    cluster.localNode.properties.NodeIp,
-				}
-
-				node.withLock("sending echo", func() error {
-					pong, err := node.client().Echo(context.Background(), ping)
-					if err != nil {
-						node.setUnhealthy(err.Error())
-						return fmt.Errorf("cannot send ping to %s: %v", node.properties.NodeIp, err)
-					}
-
-					if pong.PongTimestamp-pong.PingTimestamp > 30000 {
-						node.setUnhealthy("latency too high")
-					}
-
-					return nil
-				})
+		for _, node := range cluster.allNodes() {
+			ping := &Ping{
+				Timestamp: time.Now().UTC().UnixMilli(),
+				NodeIp:    cluster.localNode.properties.NodeIp,
 			}
 
-			return nil
-		})
+			pong, err := node.client().Echo(context.Background(), ping)
+			if err != nil {
+				node.setUnhealthy(err.Error())
+				continue
+			}
+
+			if pong.PongTimestamp-pong.PingTimestamp > 30000 {
+				node.setUnhealthy("latency too high")
+			}
+		}
 
 		time.Sleep(1 * time.Second)
 	}
