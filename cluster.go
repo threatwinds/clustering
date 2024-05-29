@@ -13,12 +13,21 @@ import (
 	"github.com/threatwinds/logger"
 )
 
+type Config struct {
+	ClusterPort int
+	SeedNodes   []string
+	DataCenter  int32
+	Rack        int32
+	LogLevel    int
+}
+
 // cluster represents a cluster of nodes.
 type cluster struct {
 	localNode    *node
 	nodes        map[string]*node
 	callBackDict map[string]func(task *Task)
 	mutex        chan struct{}
+	config       Config
 	UnimplementedClusterServer
 }
 
@@ -26,10 +35,13 @@ var clusterInstance *cluster
 var clusterOnce sync.Once
 
 // New creates a new instance of the cluster.
-func New() *cluster {
+func New(config Config, callBackDict map[string]func(task *Task)) *cluster {
 	clusterOnce.Do(func() {
+		helpers.NewLogger(config.LogLevel)
 		clusterInstance = &cluster{}
 		clusterInstance.nodes = make(map[string]*node, 3)
+		clusterInstance.config = config
+		clusterInstance.callBackDict = callBackDict
 	})
 
 	return clusterInstance
@@ -45,30 +57,28 @@ func (cluster *cluster) withLock(ref string, action func() error) *logger.Error 
 
 	select {
 	case <-time.After(wait):
-		return helpers.Logger.ErrorF("%s: timeout waiting to lock cluster", ref)
+		return helpers.Logger().ErrorF("%s: timeout waiting to lock cluster", ref)
 	case cluster.mutex <- struct{}{}:
-		defer func() { 
-			<-cluster.mutex 
-			helpers.Logger.LogF(100, "%s: released cluster", ref)
+		defer func() {
+			<-cluster.mutex
+			helpers.Logger().LogF(100, "%s: released cluster", ref)
 		}()
-		helpers.Logger.LogF(100, "%s: locked cluster", ref)
+		helpers.Logger().LogF(100, "%s: locked cluster", ref)
 	}
 
 	err := action()
 	if err != nil {
-		return helpers.Logger.ErrorF("error in action: %v", err)
+		return helpers.Logger().ErrorF("error in action: %v", err)
 	}
 
 	return nil
 }
 
 // Start starts the cluster with the specified callback dictionary.
-func (cluster *cluster) Start(callBackDict map[string]func(task *Task)) *logger.Error {
-	helpers.Logger.LogF(200, "starting cluster")
+func (cluster *cluster) Start() *logger.Error {
+	helpers.Logger().LogF(200, "starting cluster")
 
 	var e *logger.Error
-
-	cluster.callBackDict = callBackDict
 
 	cluster.mutex = make(chan struct{}, 1)
 
@@ -79,6 +89,8 @@ func (cluster *cluster) Start(callBackDict map[string]func(task *Task)) *logger.
 	cluster.localNode.tasks = make(chan *Task)
 
 	cluster.localNode.mutex = make(chan struct{}, 1)
+
+	cluster.localNode.port = cluster.config.ClusterPort
 
 	cluster.localNode.properties = new(NodeProperties)
 
@@ -91,9 +103,9 @@ func (cluster *cluster) Start(callBackDict map[string]func(task *Task)) *logger.
 
 	cluster.localNode.properties.Status = "new"
 
-	cluster.localNode.properties.DataCenter = helpers.GetCfg().DataCenter
+	cluster.localNode.properties.DataCenter = cluster.config.DataCenter
 
-	cluster.localNode.properties.Rack = helpers.GetCfg().Rack
+	cluster.localNode.properties.Rack = cluster.config.Rack
 
 	cluster.nodes[cluster.localNode.properties.NodeIp] = cluster.localNode
 
@@ -120,7 +132,7 @@ func (cluster *cluster) Start(callBackDict map[string]func(task *Task)) *logger.
 
 // connectToSeeds connects to the seed nodes in the cluster.
 func (cluster *cluster) connectToSeeds() {
-	for _, seed := range helpers.GetCfg().SeedNodes {
+	for _, seed := range cluster.config.SeedNodes {
 		cluster.newEmptyNode(seed)
 	}
 }
@@ -175,7 +187,7 @@ func (cluster *cluster) getNode(name string) (*node, *logger.Error) {
 	})
 
 	if !ok {
-		return nil, helpers.Logger.ErrorF("node not found")
+		return nil, helpers.Logger().ErrorF("node not found")
 	}
 
 	return node, nil
@@ -184,7 +196,7 @@ func (cluster *cluster) getNode(name string) (*node, *logger.Error) {
 // getRandomNode returns a random healthy node from the cluster. It excludes the local node.
 func (cluster *cluster) getRandomNode() (*node, *logger.Error) {
 	if len(cluster.healthyNodes()) <= 1 {
-		return nil, helpers.Logger.ErrorF("no other healthy nodes in the cluster")
+		return nil, helpers.Logger().ErrorF("no other healthy nodes in the cluster")
 	}
 
 	for {
@@ -221,6 +233,7 @@ func (cluster *cluster) newEmptyNode(ip string) (*node, *logger.Error) {
 					NodeIp: ip,
 					Status: "new",
 				},
+				port:  cluster.config.ClusterPort,
 				tasks: make(chan *Task),
 				mutex: make(chan struct{}, 1),
 			}
@@ -249,6 +262,7 @@ func (cluster *cluster) newNode(properties *NodeProperties) (*node, *logger.Erro
 		if newNode == nil {
 			newNode = &node{
 				properties: properties,
+				port:       cluster.config.ClusterPort,
 				tasks:      make(chan *Task),
 				mutex:      make(chan struct{}, 1),
 			}

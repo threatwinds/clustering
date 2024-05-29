@@ -32,7 +32,7 @@ func (cluster *cluster) checkNodes() {
 					deleteQueue = append(deleteQueue, name)
 				}
 
-				helpers.Logger.LogF(200, "node %s status is %s", node.properties.NodeIp, node.properties.Status)
+				helpers.Logger().LogF(200, "node %s status is %s", node.properties.NodeIp, node.properties.Status)
 			}
 
 			for _, name := range deleteQueue {
@@ -40,7 +40,7 @@ func (cluster *cluster) checkNodes() {
 			}
 
 			if cluster.localNode.properties.Status == "unhealthy" {
-				helpers.Logger.ErrorF("local node is unhealthy")
+				helpers.Logger().ErrorF("local node is unhealthy")
 				os.Exit(500)
 			}
 
@@ -57,7 +57,7 @@ func (node *node) setUnhealthy(cause string) {
 		return
 	}
 
-	helpers.Logger.ErrorF("node %s is unhealthy: %s", node.properties.NodeIp, cause)
+	helpers.Logger().ErrorF("node %s is unhealthy: %s", node.properties.NodeIp, cause)
 	node.latency = -1
 	node.properties.Status = "unhealthy"
 }
@@ -68,6 +68,6 @@ func (node *node) setHealthy() {
 		return
 	}
 
-	helpers.Logger.LogF(200, "node %s is now healthy", node.properties.NodeIp)
+	helpers.Logger().LogF(200, "node %s is now healthy", node.properties.NodeIp)
 	node.properties.Status = "healthy"
 }
