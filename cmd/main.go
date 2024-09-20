@@ -8,16 +8,16 @@ import (
 	"time"
 
 	"github.com/threatwinds/clustering"
-	"github.com/threatwinds/clustering/helpers"
+	go_sdk "github.com/threatwinds/go-sdk"
 	"google.golang.org/grpc"
 )
 
 func printMsg(task *clustering.Task) {
-	helpers.Logger().LogF(200, "received task %s with args %v", task.FunctionName, task.Args)
+	go_sdk.Logger().LogF(200, "received task %s with args %v", task.FunctionName, task.Args)
 }
 
 func main() {
-	clusterPort := 50051
+	clusterPort := 1993
 	cluster := clustering.New(clustering.Config{
 		ClusterPort: clusterPort,
 		SeedNodes:   []string{"172.17.0.2"},
@@ -34,7 +34,7 @@ func main() {
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", clusterPort))
 	if err != nil {
-		helpers.Logger().ErrorF(err.Error())
+		go_sdk.Logger().ErrorF(err.Error())
 		os.Exit(1)
 	}
 
@@ -49,7 +49,7 @@ func main() {
 	for {
 		nu := rand.Intn(1000)
 
-		helpers.Logger().LogF(100, "sending %d", nu)
+		go_sdk.Logger().LogF(100, "sending %d", nu)
 
 		cluster.BroadcastTask(&clustering.Task{
 			AnswerTo:     cluster.MyIp(),

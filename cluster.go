@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/threatwinds/clustering/helpers"
+	go_sdk "github.com/threatwinds/go-sdk"
 	"github.com/threatwinds/logger"
 )
 
@@ -37,7 +38,6 @@ var clusterOnce sync.Once
 // New creates a new instance of the cluster.
 func New(config Config, callBackDict map[string]func(task *Task)) *cluster {
 	clusterOnce.Do(func() {
-		helpers.NewLogger(config.LogLevel)
 		clusterInstance = &cluster{}
 		clusterInstance.nodes = make(map[string]*node, 3)
 		clusterInstance.config = config
@@ -57,18 +57,18 @@ func (cluster *cluster) withLock(ref string, action func() error) *logger.Error 
 
 	select {
 	case <-time.After(wait):
-		return helpers.Logger().ErrorF("%s: timeout waiting to lock cluster", ref)
+		return go_sdk.Logger().ErrorF("%s: timeout waiting to lock cluster", ref)
 	case cluster.mutex <- struct{}{}:
 		defer func() {
 			<-cluster.mutex
-			helpers.Logger().LogF(100, "%s: released cluster", ref)
+			go_sdk.Logger().LogF(100, "%s: released cluster", ref)
 		}()
-		helpers.Logger().LogF(100, "%s: locked cluster", ref)
+		go_sdk.Logger().LogF(100, "%s: locked cluster", ref)
 	}
 
 	err := action()
 	if err != nil {
-		return helpers.Logger().ErrorF("error in action: %v", err)
+		return go_sdk.Logger().ErrorF("error in action: %v", err)
 	}
 
 	return nil
@@ -76,7 +76,7 @@ func (cluster *cluster) withLock(ref string, action func() error) *logger.Error 
 
 // Start starts the cluster with the specified callback dictionary.
 func (cluster *cluster) Start() *logger.Error {
-	helpers.Logger().LogF(200, "starting cluster")
+	go_sdk.Logger().LogF(200, "starting cluster")
 
 	var e *logger.Error
 
@@ -187,7 +187,7 @@ func (cluster *cluster) getNode(name string) (*node, *logger.Error) {
 	})
 
 	if !ok {
-		return nil, helpers.Logger().ErrorF("node not found")
+		return nil, go_sdk.Logger().ErrorF("node not found")
 	}
 
 	return node, nil
@@ -196,7 +196,7 @@ func (cluster *cluster) getNode(name string) (*node, *logger.Error) {
 // getRandomNode returns a random healthy node from the cluster. It excludes the local node.
 func (cluster *cluster) getRandomNode() (*node, *logger.Error) {
 	if len(cluster.healthyNodes()) <= 1 {
-		return nil, helpers.Logger().ErrorF("no other healthy nodes in the cluster")
+		return nil, go_sdk.Logger().ErrorF("no other healthy nodes in the cluster")
 	}
 
 	for {

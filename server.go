@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/threatwinds/clustering/helpers"
+	go_sdk "github.com/threatwinds/go-sdk"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // Join is a method that handles the registration of a new node in the cluster.
 // It receives the node properties and updates the cluster accordingly.
 func (cluster *cluster) Join(ctx context.Context, in *NodeProperties) (*emptypb.Empty, error) {
-	helpers.Logger().LogF(
+	go_sdk.Logger().LogF(
 		200,
 		"received register request from %s",
 		in.NodeIp,
@@ -48,7 +48,7 @@ func (cluster *cluster) UpdateNode(ctx context.Context, in *NodeProperties) (*em
 		node.properties = in
 
 		if node.properties.Status == "unhealthy" {
-			helpers.Logger().LogF(200, "received update declaring node %s unhealthy", node.properties.NodeIp)
+			go_sdk.Logger().LogF(200, "received update declaring node %s unhealthy", node.properties.NodeIp)
 		}
 	}
 
